@@ -23,6 +23,7 @@ jobs:
           node-version: 26.x
       - name: Prepare Environment
         run: |
+          npm install -g corepack
           corepack enable
       - name: Prepare Environment (For template repository)
         # Only run this step if the repository is a template repository
@@ -63,6 +64,7 @@ jobs:
   #         node-version: 26.x
   #     - name: Prepare Environment
   #       run: |
+  #         npm install -g corepack
   #         corepack enable
   #         yarn install
   #       env:

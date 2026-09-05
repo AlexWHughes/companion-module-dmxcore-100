@@ -1,0 +1,41 @@
+name: Package module
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: Package for Companion
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Use Node.js 26.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26.x
+      - name: Prepare Environment
+        run: |
+          npm install -g corepack
+          corepack enable
+      - name: Install
+        run: yarn install
+        env:
+          CI: true
+      - name: Package module
+        run: yarn package
+        env:
+          CI: true
+      - name: Upload Companion package
+        uses: actions/upload-artifact@v6
+        with:
+          name: companion-module-dmxcore-100
+          path: dmxcore-100-*.tgz
+          if-no-files-found: error
