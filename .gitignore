@@ -1,0 +1,10 @@
+node_modules/
+package-lock.json
+/pkg
+/*.tgz
+/dist
+/dist-test
+DEBUG-*
+/.yarn
+/.vscode
+agent-tools/
