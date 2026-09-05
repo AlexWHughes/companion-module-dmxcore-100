@@ -58,7 +58,7 @@ yarn build && yarn companion-module-build --dev
 
 ### GitHub Actions package
 
-The **Package module** workflow (`.github/workflows/package.yaml`) runs the same `yarn package` on every push, pull request, tag, and manual **Run workflow**.
+The **Package module** workflow (`.github/workflows/package.yaml`) runs the same `yarn package` on every push, pull request, v-prefixed version tag (`v1.2.3` and similar), and manual **Run workflow**. Other tag names do not trigger it.
 
 1. Open the repo on GitHub → **Actions** → **Package module**.
 2. Open a successful run and download the `companion-module-dmxcore-100` artifact.
