@@ -6,7 +6,7 @@ Companion help text lives in [companion/HELP.md](./companion/HELP.md). OSC refer
 
 ## Develop
 
-Requires Node.js 22.20+ and Yarn 4.
+Requires Node.js 26.5+ and Yarn 4. Needs Companion 5.0 or later (`node26` runtime).
 
 ```bash
 corepack enable

@@ -21,7 +21,7 @@
 		"url": "git+https://github.com/bitfocus/companion-module-dmxcore-100.git"
 	},
 	"engines": {
-		"node": "^22.20",
+		"node": "^26.5",
 		"yarn": "^4"
 	},
 	"dependencies": {
@@ -29,7 +29,7 @@
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^3.1.0",
-		"@types/node": "^22.20.1",
+		"@types/node": "^26.4.1",
 		"eslint": "^10.2.0",
 		"husky": "^9.1.7",
 		"lint-staged": "^16.4.0",
