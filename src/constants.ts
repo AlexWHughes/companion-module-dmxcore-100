@@ -4,14 +4,16 @@ export const REQUEST_TIMEOUT_MS = 10000
 export const WS_PING_INTERVAL_MS = 15000
 export const WS_RECONNECT_MS = 3000
 export const WS_RECONNECT_MAX_MS = 30000
-/** How often to refresh `/api/status` (temps, CPU, show name, …). */
+/** How often to refresh Integration `/info` health fields (temps, CPU, show name, …). */
 export const STATUS_POLL_MS = 30000
 
 export const SYSTEM_MASTER = 'system.masterdimmer'
 export const SYSTEM_STOP = 'system.stop'
 export const SYSTEM_NOW_PLAYING = 'system.nowplaying'
-/** Common Integration API code for the system audio volume level. */
-export const SYSTEM_AUDIO_VOLUME = 'system.audiovolume'
+/** Integration API code for the system audio volume level. */
+export const SYSTEM_AUDIO_VOLUME = 'system.volume'
+/** Sentinel: omit optional activate fields so the device uses Settings → Playback defaults. */
+export const PLAYBACK_DEFAULT = -1
 
 export const Colors = {
 	White: 0xffffff,

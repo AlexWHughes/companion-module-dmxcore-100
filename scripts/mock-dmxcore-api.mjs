@@ -1,12 +1,12 @@
 /**
  * Local Integration API mock for Companion module development.
- * Listens on http://127.0.0.1:8080/api/integration/v1
+ * Listens on http://127.0.0.1:8000/api/integration/v1 (desktop-style default).
  * Auth: Authorization: Bearer test-key
  */
 import http from 'node:http'
 import { WebSocketServer } from 'ws'
 
-const PORT = Number(process.env.PORT || 8080)
+const PORT = Number(process.env.PORT || 8000)
 const API_KEY = process.env.API_KEY || 'test-key'
 const PREFIX = '/api/integration/v1'
 
@@ -15,9 +15,12 @@ const catalog = [
 	{ code: 'cue.OUTRO', name: 'Outro', kind: 'scene' },
 	{ code: 'preset.PARTY', name: 'Party', kind: 'switch' },
 	{ code: 'system.mute', name: 'Mute', kind: 'switch' },
+	{ code: 'system.blackout', name: 'Blackout', kind: 'switch' },
+	{ code: 'system.outputmute', name: 'Output Mute', kind: 'switch' },
 	{ code: 'system.masterdimmer', name: 'Master Dimmer', kind: 'level' },
+	{ code: 'system.volume', name: 'Audio Volume', kind: 'level' },
 	{ code: 'zone.BAR', name: 'Bar Zone', kind: 'level' },
-	{ code: 'look.Mode', name: 'Mode', kind: 'select', choices: ['A', 'B', 'C'] },
+	{ code: 'cv.Mode', name: 'Mode', kind: 'select', choices: ['A', 'B', 'C'] },
 	{ code: 'system.stop', name: 'Stop', kind: 'button' },
 	{ code: 'system.clearambient', name: 'Clear Ambient', kind: 'button' },
 	{ code: 'system.nowplaying', name: 'Now Playing', kind: 'sensor' },
@@ -27,9 +30,12 @@ const catalog = [
 const states = new Map([
 	['preset.PARTY', { code: 'preset.PARTY', isOn: false }],
 	['system.mute', { code: 'system.mute', isOn: false }],
+	['system.blackout', { code: 'system.blackout', isOn: false }],
+	['system.outputmute', { code: 'system.outputmute', isOn: false }],
 	['system.masterdimmer', { code: 'system.masterdimmer', level: 1 }],
+	['system.volume', { code: 'system.volume', level: 0.8 }],
 	['zone.BAR', { code: 'zone.BAR', level: 0.5 }],
-	['look.Mode', { code: 'look.Mode', choice: 'A' }],
+	['cv.Mode', { code: 'cv.Mode', choice: 'A' }],
 	['system.nowplaying', { code: 'system.nowplaying', text: '' }],
 ])
 
@@ -73,6 +79,21 @@ function broadcast(frame) {
 	}
 }
 
+function nowPlayingText(code) {
+	const entity = catalog.find((e) => e.code === code)
+	const label = entity?.name || code.replace(/^(cue|timeline|sound)\./i, '')
+	const prefix = code.split('.')[0]?.toLowerCase() ?? 'cue'
+	switch (prefix) {
+		case 'sound':
+			return `Sound: ${label}`
+		case 'timeline':
+			return `Playing timeline: ${label}`
+		case 'cue':
+		default:
+			return `Cue: ${label}`
+	}
+}
+
 function applyExecute(body) {
 	const code = String(body.code || '')
 	const command = String(body.command || '')
@@ -88,8 +109,23 @@ function applyExecute(body) {
 		case 'button':
 			if (command !== 'activate') return { status: 400, error: 'invalid command' }
 			if (entity.kind === 'scene') {
-				states.set('system.nowplaying', { code: 'system.nowplaying', text: code })
-				broadcast({ type: 'state', states: [{ code: 'system.nowplaying', text: code }] })
+				const prefix = code.split('.')[0]?.toLowerCase() ?? ''
+				if (prefix === 'cue' || prefix === 'sound') {
+					const hasPlaybackOverride =
+						body.loop !== undefined || body.fadeInMs !== undefined || body.fadeOutMs !== undefined
+					if (hasPlaybackOverride) {
+						for (const key of ['loop', 'fadeInMs', 'fadeOutMs']) {
+							if (body[key] !== undefined && typeof body[key] !== 'number') {
+								return { status: 400, error: 'invalid playback override' }
+							}
+						}
+					}
+				} else if (body.loop !== undefined || body.fadeInMs !== undefined || body.fadeOutMs !== undefined) {
+					// Timelines ignore overrides; real Core does not 400 on omit-only payloads.
+				}
+				const text = nowPlayingText(code)
+				states.set('system.nowplaying', { code: 'system.nowplaying', text })
+				broadcast({ type: 'state', states: [{ code: 'system.nowplaying', text }] })
 			} else if (code === 'system.stop') {
 				states.set('system.nowplaying', { code: 'system.nowplaying', text: '' })
 				broadcast({ type: 'state', states: [{ code: 'system.nowplaying', text: '' }] })
@@ -118,7 +154,8 @@ function applyExecute(body) {
 			if (command !== 'setChoice' || typeof body.choice !== 'string') {
 				return { status: 400, error: 'invalid command' }
 			}
-			const state = { code, choice: body.choice }
+			const canonical = entity.choices?.find((c) => c.toLowerCase() === body.choice.toLowerCase()) ?? body.choice
+			const state = { code, choice: canonical }
 			states.set(code, state)
 			broadcast({ type: 'state', states: [state] })
 			return { status: 202 }
@@ -130,6 +167,31 @@ function applyExecute(body) {
 	}
 }
 
+function infoPayload() {
+	return {
+		protocolVersion: 1,
+		serial: 'MOCK-001',
+		productName: 'DMX Core 100',
+		deviceName: 'Mock Device',
+		softwareVersion: '0.0.0-mock',
+		hostName: 'mock-host',
+		showName: 'Mock Show',
+		sysCpuUsage: 12.5,
+		appCpuUsage: 8.1,
+		sysMemoryUsageMB: 512,
+		sysMemoryTotalMB: 4096,
+		appMemoryUsageMB: 256,
+		storageUsageMB: 1024,
+		storageTotalMB: 32000,
+		audioAvailable: true,
+		playerName: '',
+		playerCode: '',
+		appUpTimeH: 1.5,
+		sysUpTimeH: 24.0,
+		recorder: 'INACTIVE',
+	}
+}
+
 const server = http.createServer(async (req, res) => {
 	if (!req.url || !req.method) {
 		res.writeHead(400)
@@ -138,36 +200,6 @@ const server = http.createServer(async (req, res) => {
 	}
 
 	const url = new URL(req.url, `http://127.0.0.1:${PORT}`)
-
-	if (req.method === 'GET' && url.pathname === '/api/status') {
-		res.writeHead(200, { 'Content-Type': 'application/json' })
-		res.end(
-			JSON.stringify({
-				hostName: 'mock-host',
-				deviceNickname: 'Mock Device',
-				appVersion: '0.0.0-mock',
-				sysCpuUsage: 12.5,
-				appCpuUsage: 8.1,
-				sysMemoryUsageMB: 512,
-				sysMemoryTotalMB: 4096,
-				appMemoryUsageMB: 256,
-				storageUsageMB: 1024,
-				storageTotalMB: 32000,
-				cpuTemperatureC: 45.2,
-				boardTemperatureC: 38.0,
-				audioAvailable: true,
-				networkSpeedMbit: 1000,
-				playerName: null,
-				playerCode: null,
-				appUpTimeH: 1.5,
-				sysUpTimeH: 24.0,
-				showName: 'Mock Show',
-				recorder: 'INACTIVE',
-				schedules: [],
-			}),
-		)
-		return
-	}
 
 	if (!url.pathname.startsWith(PREFIX)) {
 		res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -185,15 +217,7 @@ const server = http.createServer(async (req, res) => {
 	try {
 		if (req.method === 'GET' && path === '/info') {
 			res.writeHead(200, { 'Content-Type': 'application/json' })
-			res.end(
-				JSON.stringify({
-					protocolVersion: 1,
-					serial: 'MOCK-001',
-					product: 'DMX Core 100',
-					deviceName: 'Mock Device',
-					softwareVersion: '0.0.0-mock',
-				}),
-			)
+			res.end(JSON.stringify(infoPayload()))
 			return
 		}
 
@@ -260,7 +284,7 @@ server.on('upgrade', (req, socket, head) => {
 				type: 'hello',
 				protocolVersion: 1,
 				serial: 'MOCK-001',
-				product: 'DMX Core 100',
+				productName: 'DMX Core 100',
 				deviceName: 'Mock Device',
 				softwareVersion: '0.0.0-mock',
 			}),

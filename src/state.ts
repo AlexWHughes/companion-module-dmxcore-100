@@ -67,6 +67,11 @@ export function isSwitchOn(state: DmxCoreState, code: string): boolean {
 	return state.states.get(code)?.isOn === true
 }
 
+/** True only when the device has reported `isOn: false`. Missing state is unknown, not off. */
+export function isSwitchOff(state: DmxCoreState, code: string): boolean {
+	return state.states.get(code)?.isOn === false
+}
+
 export function sensorText(state: DmxCoreState, code: string): string {
 	return state.states.get(code)?.text ?? ''
 }
@@ -81,11 +86,28 @@ export function isNowPlaying(state: DmxCoreState): boolean {
 	return sensorText(state, SYSTEM_NOW_PLAYING).trim().length > 0
 }
 
+/**
+ * Now-playing `text` is a status line (e.g. `Cue: INTRO`), never a namespaced code.
+ * Match the entity's catalog name and/or code suffix case-insensitively.
+ */
+export function nowPlayingMatchesEntity(state: DmxCoreState, code: string): boolean {
+	const text = sensorText(state, SYSTEM_NOW_PLAYING).trim().toLowerCase()
+	if (!text || !code) return false
+
+	const entity = state.entities.get(code)
+	const suffix = code.replace(/^(cue|timeline|sound)\./i, '').toLowerCase()
+	const name = entity?.name.trim().toLowerCase() ?? ''
+
+	if (suffix && text.includes(suffix)) return true
+	if (name && text.includes(name)) return true
+	return false
+}
+
 export function selectChoice(state: DmxCoreState, code: string): string {
 	return state.states.get(code)?.choice ?? ''
 }
 
-/** Prefer device nickname from `/api/status`, then Integration `/info` name. */
+/** Prefer nickname from `/info` status snapshot when present, else Integration device name. */
 export function displayDeviceName(state: DmxCoreState): string {
 	return state.status?.deviceNickname || state.info?.deviceName || ''
 }
@@ -186,11 +208,14 @@ export function variableValuesFromState(state: DmxCoreState): Record<string, str
 }
 
 function findAudioVolumeCode(state: DmxCoreState): string | null {
-	if (state.entities.has(SYSTEM_AUDIO_VOLUME)) return SYSTEM_AUDIO_VOLUME
+	const exact = SYSTEM_AUDIO_VOLUME.toLowerCase()
+	for (const entity of state.entities.values()) {
+		if (entity.kind === 'level' && entity.code.toLowerCase() === exact) return entity.code
+	}
 	for (const entity of state.entities.values()) {
 		if (entity.kind !== 'level') continue
 		const hay = `${entity.code} ${entity.name}`.toLowerCase()
-		if (/audio\s*volume|audiovolume|audio\.volume/.test(hay)) return entity.code
+		if (/audio\s*volume|audiovolume|system\.audiovolume|audio\.volume/.test(hay)) return entity.code
 	}
 	return null
 }
@@ -198,7 +223,9 @@ function findAudioVolumeCode(state: DmxCoreState): string | null {
 function formatEntityVariable(kind: EntityKind, entityState: EntityState | undefined): string {
 	switch (kind) {
 		case 'switch':
-			return entityState?.isOn ? 'on' : 'off'
+			if (entityState?.isOn === true) return 'on'
+			if (entityState?.isOn === false) return 'off'
+			return ''
 		case 'level':
 			return formatPercentUnit(typeof entityState?.level === 'number' ? entityState.level : null)
 		case 'select':

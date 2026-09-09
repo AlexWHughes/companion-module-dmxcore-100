@@ -20,7 +20,7 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			label: 'Connection',
 			width: 12,
 			value:
-				'Uses the DMX Core Integration API. On the device: Device → System → Enable Integration API, then Issue Integration API Key. Paste the key below. No OSC Client registration is required.',
+				'Uses the DMX Core Integration API. On the device: Device → System → Enable Integration API, then Issue Integration API Key. Paste the key below. No OSC Client registration is required. Port: hardware often 80/443; desktop software 8000/8001 (same as the Web UI).',
 		},
 		{
 			type: 'textinput',

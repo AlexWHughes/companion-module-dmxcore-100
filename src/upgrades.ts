@@ -28,8 +28,9 @@ const upgradeToIntegrationApi: CompanionStaticUpgradeScript<ModuleConfig, Module
 		allowInsecureTls: legacy.allowInsecureTls === true,
 	}
 
-	// OSC used UDP 8000; older module builds defaulted to 8080. Remap both to HTTP 80.
-	if ((legacy.port === 8000 && legacy.listenForFeedback !== undefined) || legacy.port === 8080) {
+	// Older module / docs defaulted to 8080 (nothing in Core listens there). Remap to HTTP 80.
+	// Do not remap 8000 — desktop Core uses HTTP 8000 (and OSC also used UDP 8000).
+	if (legacy.port === 8080) {
 		updatedConfig.port = DEFAULT_HTTP_PORT
 	}
 

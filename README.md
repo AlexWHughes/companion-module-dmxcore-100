@@ -75,4 +75,4 @@ Live variables include now playing, master level, show name, device nickname, te
 
 ## For developers
 
-Source lives in `src/`. Day-to-day: Node.js 26.5+, Yarn 4, then `yarn install`, `yarn build`, and load the folder as a development module in Companion. To produce an importable package: `yarn package` → `dmxcore-100-<version>.tgz`. To publish a GitHub Release, bump `package.json` version, commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`. Local mock API: `yarn mock` (key `test-key`, port `8080`).
+Source lives in `src/`. Day-to-day: Node.js 26.5+, Yarn 4, then `yarn install`, `yarn build`, and load the folder as a development module in Companion. To produce an importable package: `yarn package` → `dmxcore-100-<version>.tgz`. To publish a GitHub Release, bump `package.json` version, commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`. Local mock API: `yarn mock` (key `test-key`, port `8000`).
