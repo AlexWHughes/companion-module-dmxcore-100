@@ -10,6 +10,8 @@ export const STATUS_POLL_MS = 30000
 export const SYSTEM_MASTER = 'system.masterdimmer'
 export const SYSTEM_STOP = 'system.stop'
 export const SYSTEM_NOW_PLAYING = 'system.nowplaying'
+/** Common Integration API code for the system audio volume level. */
+export const SYSTEM_AUDIO_VOLUME = 'system.audiovolume'
 
 export const Colors = {
 	White: 0xffffff,

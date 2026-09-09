@@ -1,91 +1,77 @@
-# companion-module-dmxcore-100
+<p align="center">
+  <img src="assets/dmxcore-logo.png" alt="DMX Core" width="420" />
+</p>
 
-Bitfocus Companion connection for the [DMX Core 100](https://dmxcore.com/dmx-core-100). It uses the device [Integration API](https://docs.dmxcore.com/dmx-core-100/integrations/integration-api/): catalog dropdowns, execute commands, and live WebSocket state for button feedback.
+# DMX Core 100 for Bitfocus Companion
 
-Companion help text lives in [companion/HELP.md](./companion/HELP.md).
+Control a [DMX Core 100](https://dmxcore.com/dmx-core-100) from [Bitfocus Companion](https://bitfocus.io/companion) — play cues, toggle looks, adjust levels, and show live status on Stream Deck buttons.
 
-## Develop
+This connection uses the device [Integration API](https://docs.dmxcore.com/dmx-core-100/integrations/integration-api/) (HTTP + WebSocket). No OSC client registration is required on the device.
 
-Requires Node.js 26.5+ and Yarn 4. Needs Companion 5.0 or later (`node26` runtime).
+Requires **Companion 5.0 or later**.
 
-```bash
-npm install -g corepack
-corepack enable
-yarn install
-yarn build
-yarn lint
-yarn test
-```
+---
 
-`yarn dev` rebuilds on change. For day-to-day work, install this folder as a development module in Companion (Developer → Modules, or drop it into the Companion modules directory, depending on your Companion version). That loads compiled `dist/` source, not the importable package.
+## Install (import the module)
 
-## Package for Companion
+Companion loads this module from a packaged `.tgz` file (for example `dmxcore-100-0.2.7.tgz`).
 
-Companion imports a packaged `.tgz`, not the git checkout. `yarn package` compiles TypeScript, then runs `companion-module-build` to bundle the module the same way Bitfocus does for the store.
+1. Open Companion and go to **Modules**.
+2. Choose **Import Module Package**.
+3. Select the `dmxcore-100-*.tgz` file.
+4. Confirm the import. The connection **DMX Core: DMX Core 100** should appear in the module list.
 
-### Manual build
+### Where to get the package
 
-```bash
-npm install -g corepack
-corepack enable
-yarn install
-yarn package
-```
+- A release or Actions artifact from this repository (download `dmxcore-100-<version>.tgz`)
+- Or a `.tgz` someone on your team built with `yarn package`
 
-That writes:
+---
 
-| Output | Use |
+## Connect to your DMX Core
+
+1. On the DMX Core Web UI go to **Device → System**.
+2. Turn on **Enable Integration API**.
+3. Click **Issue Integration API Key** (or create one under **User Management → API Keys**). Copy the key when it is shown — it is only displayed once.
+4. In Companion, add a connection and choose **DMX Core: DMX Core 100**.
+5. Enter:
+   - **DMX Core IP / hostname**
+   - **HTTP(S) port** — hardware is often **80** / **443**; desktop software is often **8000** / **8001** (same as the Web UI)
+   - The **API key**
+6. Enable **Use HTTPS** only if you reach the device over TLS. Tick **Allow insecure TLS** for self-signed certificates.
+7. Save. When the connection is online, Companion loads the live catalog and status from the device.
+
+Treat API keys like passwords and keep the device on a trusted network.
+
+Full setup notes (including macOS Local Network permissions) are in [companion/HELP.md](./companion/HELP.md).
+
+---
+
+## What you can do
+
+After the connection is online, open the **Presets** tab and drag buttons onto your Stream Deck layout. Presets are built from the **live catalog** on your device:
+
+| Section | Useful for |
 | --- | --- |
-| `pkg/` | Unpacked bundle. Companion loads this if you create an empty `DEBUG-PACKAGED` file in the module root. |
-| `dmxcore-100-<version>.tgz` | File to import. The version comes from `package.json` (currently `0.2.4`). |
+| **Playback** | One button per cue / timeline / sound |
+| **Looks & buttons → Control** | Switch toggles and **Stop Playback** |
+| **Levels → Rotary** | **Master Dimmer** and **Audio Volume** encoders |
+| **Device → Status** | Now Playing and refresh |
 
-`pkg/` and `*.tgz` are gitignored.
+You can also build custom buttons with actions such as Activate scene, System actions, Switch entity, Set / bump level, and Set choice.
 
-### Import the tarball
+Live variables include now playing, master level, show name, device nickname, temperatures, and more — for example `$(dmxcore:now_playing)`.
 
-1. Open Companion **5.0 or later** (this module uses the `node26` runtime).
-2. In the admin UI go to **Modules**.
-3. Choose **Import Module Package** and select `dmxcore-100-<version>.tgz`.
-4. Add a connection: **DMX Core: DMX Core 100**.
-5. Enable the Integration API on the device, paste an API key, and set host/port (see [companion/HELP.md](./companion/HELP.md)).
+---
 
-To test a local packaged build without importing, create an empty `DEBUG-PACKAGED` file next to `package.json` so Companion reads `pkg/` instead of source. Remove that file when you go back to development, or Companion will keep serving the last package.
+## Support
 
-A `--dev` package keeps line numbers readable if you need to debug the bundle:
+- Device docs: [Integration API](https://docs.dmxcore.com/dmx-core-100/integrations/integration-api/)
+- In-Companion help: [companion/HELP.md](./companion/HELP.md)
+- Product page: [dmxcore.com/dmx-core-100](https://dmxcore.com/dmx-core-100)
 
-```bash
-yarn build && yarn companion-module-build --dev
-```
+---
 
-### GitHub Actions package
+## For developers
 
-The **Package module** workflow (`.github/workflows/package.yaml`) runs the same `yarn package` on every push, pull request, v-prefixed version tag (`v1.2.3` and similar), and manual **Run workflow**. Other tag names do not trigger it.
-
-1. Open the repo on GitHub → **Actions** → **Package module**.
-2. Open a successful run and download the `companion-module-dmxcore-100` artifact.
-3. Unpack the artifact zip if your browser saved it that way; inside is `dmxcore-100-<version>.tgz`.
-4. Import that `.tgz` in Companion as above.
-
-## Mock Integration API
-
-There is no DMX Core application within this repo. To exercise catalog/execute/events locally:
-
-```bash
-yarn mock
-```
-
-The mock listens on `http://127.0.0.1:8080/api/integration/v1` with API key `test-key`, and accepts WebSocket clients on `/events`.
-
-## Module layout
-
-| Path | Role |
-| --- | --- |
-| `src/main.ts` | Connection lifecycle, HTTP + WebSocket |
-| `src/api.ts` | Integration API HTTP client |
-| `src/events.ts` | WebSocket event stream |
-| `src/entities.ts` | Entity/state parsing and dropdown helpers |
-| `src/actions.ts` | Scene, switch, level, select execute |
-| `src/feedbacks.ts` | Boolean button feedback |
-| `src/presets.ts` | Drag-and-drop buttons |
-| `src/variables.ts` | Device + catalog variables |
-| `src/state.ts` | Catalog/state store |
+Source lives in `src/`. Day-to-day: Node.js 26.5+, Yarn 4, then `yarn install`, `yarn build`, and load the folder as a development module in Companion. To produce an importable package: `yarn package` → `dmxcore-100-<version>.tgz`. Local mock API: `yarn mock` (key `test-key`, port `8080`).

@@ -57,8 +57,6 @@ export type ExecuteRequest = {
 	command: ExecuteCommand
 	level?: number
 	choice?: string
-	/** Cue/sound loop count. 0 = forever. Omitted = use the entity's saved default. */
-	loop?: number
 }
 
 export function isEntityKind(value: unknown): value is EntityKind {

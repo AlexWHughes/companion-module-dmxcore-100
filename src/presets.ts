@@ -1,9 +1,9 @@
 import type { CompanionPresetDefinitions, CompanionPresetSection, CompanionTextSize } from '@companion-module/base'
 import type { ModuleSchema } from './main.js'
 import type ModuleInstance from './main.js'
-import { Colors, SYSTEM_MASTER, SYSTEM_STOP } from './constants.js'
+import { Colors, SYSTEM_AUDIO_VOLUME, SYSTEM_MASTER, SYSTEM_STOP } from './constants.js'
 import type { IntegrationEntity } from './entities.js'
-import { entitiesOfKind } from './entities.js'
+import { entitiesOfKind, entityVariableId } from './entities.js'
 
 /** Fixed size so labels stay readable without auto upsizing that mid-word wraps. */
 const PRESET_TEXT_SIZE: CompanionTextSize = '14'
@@ -46,6 +46,20 @@ function varRef(label: string, name: string): string {
 	return `$(${label}:${name})`
 }
 
+function isAudioVolumeEntity(entity: IntegrationEntity): boolean {
+	if (entity.kind !== 'level') return false
+	if (entity.code.toLowerCase() === SYSTEM_AUDIO_VOLUME) return true
+	const hay = `${entity.code} ${entity.name}`.toLowerCase()
+	return /audio\s*volume|audiovolume|audio\.volume/.test(hay)
+}
+
+function findAudioVolume(levels: IntegrationEntity[]): IntegrationEntity | undefined {
+	return (
+		levels.find((level) => level.code.toLowerCase() === SYSTEM_AUDIO_VOLUME) ??
+		levels.find((level) => isAudioVolumeEntity(level))
+	)
+}
+
 export function UpdatePresets(self: ModuleInstance): void {
 	const label = self.label || 'dmxcore'
 	const entities = [...self.state.entities.values()]
@@ -79,9 +93,9 @@ export function UpdatePresets(self: ModuleInstance): void {
 		},
 		stop_button: {
 			type: 'simple',
-			name: 'Stop',
-			keywords: ['stop', 'button'],
-			style: buttonStyle('Stop', Colors.Stop),
+			name: 'Stop Playback',
+			keywords: ['stop', 'button', 'playback'],
+			style: buttonStyle('Stop\nPlayback', Colors.Stop),
 			steps: [
 				{
 					down: [{ actionId: 'activateButton', options: { code: stopCode } }],
@@ -140,13 +154,13 @@ export function UpdatePresets(self: ModuleInstance): void {
 		},
 		master_encoder: {
 			type: 'simple',
-			name: 'Master Encoder',
-			keywords: ['master', 'encoder', 'rotary'],
-			style: buttonStyle(`Master\n${varRef(label, 'master_percent')}%`, Colors.Master, Colors.Black),
+			name: 'Master Dimmer',
+			keywords: ['master', 'dimmer', 'encoder', 'rotary'],
+			style: buttonStyle(`Master\nDimmer\n${varRef(label, 'master_percent')}%`, Colors.Master, Colors.Black),
 			options: { stepAutoProgress: false },
 			steps: [
 				{
-					down: [{ actionId: 'refreshCatalog', options: {} }],
+					down: [{ actionId: 'setLevel', options: { code: masterCode, percent: 100 } }],
 					up: [],
 					rotate_left: [{ actionId: 'bumpLevel', options: { code: masterCode, deltaPercent: -5 } }],
 					rotate_right: [{ actionId: 'bumpLevel', options: { code: masterCode, deltaPercent: 5 } }],
@@ -156,8 +170,8 @@ export function UpdatePresets(self: ModuleInstance): void {
 		},
 		refresh: {
 			type: 'simple',
-			name: 'Refresh Catalog',
-			style: buttonStyle('Refresh', Colors.Device),
+			name: 'Refresh Playback objects',
+			style: buttonStyle('Refresh\nPlayback\nobjects', Colors.Device),
 			steps: [
 				{
 					down: [{ actionId: 'refreshCatalog', options: {} }],
@@ -188,7 +202,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 					down: [
 						{
 							actionId: 'activateScene',
-							options: { code: scene.code, overrideLoop: true, loopCount: 0 },
+							options: { code: scene.code },
 						},
 					],
 					up: [],
@@ -215,7 +229,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 					down: [
 						{
 							actionId: 'activateScene',
-							options: { code: 'cue.INTRO', overrideLoop: true, loopCount: 0 },
+							options: { code: 'cue.INTRO' },
 						},
 					],
 					up: [],
@@ -271,9 +285,33 @@ export function UpdatePresets(self: ModuleInstance): void {
 		}
 	}
 
+	const audioVolume = findAudioVolume(levels)
+	const audioVolumeCode = audioVolume?.code
+
+	if (audioVolume && audioVolumeCode) {
+		const audioVar = entityVariableId('level', audioVolumeCode)
+		presets.audio_volume_encoder = {
+			type: 'simple',
+			name: 'Audio Volume',
+			keywords: ['audio', 'volume', 'encoder', 'rotary', audioVolumeCode],
+			style: buttonStyle(`Audio\nVolume\n${varRef(label, audioVar)}%`, Colors.Master, Colors.Black),
+			options: { stepAutoProgress: false },
+			steps: [
+				{
+					down: [{ actionId: 'setLevel', options: { code: audioVolumeCode, percent: 100 } }],
+					up: [],
+					rotate_left: [{ actionId: 'bumpLevel', options: { code: audioVolumeCode, deltaPercent: -5 } }],
+					rotate_right: [{ actionId: 'bumpLevel', options: { code: audioVolumeCode, deltaPercent: 5 } }],
+				},
+			],
+			feedbacks: [],
+		}
+	}
+
 	const levelPresetIds: string[] = []
 	for (const level of levels) {
 		if (level.code === masterCode) continue
+		if (audioVolumeCode && level.code === audioVolumeCode) continue
 		const id = presetId('level', level.code)
 		levelPresetIds.push(id)
 		presets[id] = {
@@ -301,35 +339,44 @@ export function UpdatePresets(self: ModuleInstance): void {
 		{
 			id: 'playback',
 			name: 'Playback',
-			description: 'Scenes from the live catalog (loop forever by default).',
+			description: 'Scenes from the live catalog. Looping follows each cue/sound’s Web UI Loop setting.',
 			definitions: [{ id: 'scenes', type: 'simple', name: 'Scenes', presets: scenePresetIds }],
 		},
 	]
 
-	if (switchPresetIds.length > 0 || buttonPresetIds.length > 0) {
-		structure.push({
-			id: 'looks',
-			name: 'Looks & buttons',
-			definitions: [
-				...(switchPresetIds.length
-					? [{ id: 'switches', type: 'simple' as const, name: 'Switches', presets: switchPresetIds }]
-					: []),
-				...(buttonPresetIds.length
-					? [{ id: 'buttons', type: 'simple' as const, name: 'Buttons', presets: buttonPresetIds }]
-					: []),
-			],
-		})
-	}
+	structure.push({
+		id: 'looks',
+		name: 'Looks & buttons',
+		definitions: [
+			{
+				id: 'control',
+				type: 'simple',
+				name: 'Control',
+				presets: [...switchPresetIds, 'stop_button'],
+			},
+			...(buttonPresetIds.length
+				? [{ id: 'buttons', type: 'simple' as const, name: 'Buttons', presets: buttonPresetIds }]
+				: []),
+		],
+	})
+
+	const rotaryPresets = ['master_encoder', ...(audioVolumeCode ? (['audio_volume_encoder'] as const) : [])]
 
 	structure.push({
 		id: 'master',
 		name: 'Levels',
 		definitions: [
 			{
+				id: 'rotary',
+				type: 'simple',
+				name: 'Rotary',
+				presets: [...rotaryPresets],
+			},
+			{
 				id: 'master',
 				type: 'simple',
 				name: 'Master dimmer',
-				presets: ['master_0', 'master_50', 'master_100', 'master_encoder'],
+				presets: ['master_0', 'master_50', 'master_100'],
 			},
 			...(levelPresetIds.length
 				? [{ id: 'other_levels', type: 'simple' as const, name: 'Other levels', presets: levelPresetIds }]
@@ -345,7 +392,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 				id: 'status',
 				type: 'simple',
 				name: 'Status',
-				presets: ['now_playing', 'stop_button', 'refresh'],
+				presets: ['now_playing', 'refresh'],
 			},
 		],
 	})

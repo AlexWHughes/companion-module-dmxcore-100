@@ -32,11 +32,11 @@ This is an OS permission issue, not a wrong API key or port.
 After the connection is online, open the Presets tab. Buttons are built from the **live catalog**:
 
 - **Playback** — one button per scene (cues / timelines / sounds)
-- **Looks & buttons** — toggles for each switch, plus other system buttons (blackout, clear ambient, …)
-- **Levels** — master 0 / 50 / 100% + encoder, and 100% shortcuts for other level entities
-- **Device → Status** — Now Playing, Stop, Refresh catalog
+- **Looks & buttons → Control** — switch toggles, then **Stop Playback**; other system buttons under Buttons
+- **Levels → Rotary** — Master Dimmer and Audio Volume encoders (±5%); Master dimmer also has 0/50/100% shortcuts
+- **Device → Status** — Now Playing and Refresh Playback objects
 
-Scene presets send **loop forever** (`loop: 0`) by default. Re-drag presets after the catalog changes if you add cues on the device.
+Scene presets call `activate` only. To loop a cue forever, set **Loop = 0** on that cue in the DMX Core Web UI (Lighting → Cues → cue details). Re-drag presets after the catalog changes if you add cues on the device.
 
 The Now Playing preset shows the live cue text (green while playing) or **Stopped** when idle. Variable text on buttons uses your connection label, e.g. `$(dmxcore:now_playing)`.
 
@@ -44,7 +44,7 @@ The Now Playing preset shows the live cue text (green while playing) or **Stoppe
 
 | Action | Integration API |
 | --- | --- |
-| Activate scene | `execute` → `activate` on a `scene` entity, optional `loop` (0 = forever) |
+| Activate scene | `execute` → `activate` on a `scene` entity |
 | System actions | `execute` → `activate` on a system button (Stop, Blackout, Clear Ambient, …) |
 | Switch entity | `turnOn` / `turnOff` / `toggle` on a `switch` entity |
 | Set level | `setLevel` with `level` 0–1 (Companion UI is 0–100%) |
@@ -52,7 +52,7 @@ The Now Playing preset shows the live cue text (green while playing) or **Stoppe
 | Set choice | `setChoice` on a `select` entity |
 | Refresh catalog | HTTP `GET /catalog` + `GET /state` |
 
-**Loop:** Enable **Override loop count** on Activate scene to send `loop` with the command (same meaning as OSC / scripting: `0` = forever, `1` = once, `N` = N times). If override is off, the device uses the cue/sound’s saved Loop setting from the Web UI. The public Integration API docs only list `level` / `choice` today; `loop` matches the scripting `playCue` options and is accepted by current firmware.
+**Loop:** The Integration API `execute` payload only documents `level` / `choice`. Current firmware accepts extra fields like `loop` with HTTP 202 but **does not apply them** — cues always use the **Loop** value saved on the cue/sound in the Web UI (`0` = forever, `1` = once). Set looping there; Companion cannot override it over the Integration API.
 
 Levels in Companion are **0–100%** and are sent to the device as **0.0–1.0**.
 

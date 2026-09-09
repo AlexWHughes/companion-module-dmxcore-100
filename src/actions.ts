@@ -6,13 +6,7 @@ import { assertNever, clamp, percentToLevel } from './util.js'
 import { getLevel } from './state.js'
 
 export type ActionsSchema = {
-	activateScene: {
-		options: {
-			code: string
-			overrideLoop: boolean
-			loopCount: number
-		}
-	}
+	activateScene: { options: { code: string } }
 	activateButton: { options: { code: string } }
 	switchEntity: { options: { code: string; command: SwitchCommand } }
 	setLevel: { options: { code: string; percent: number } }
@@ -56,7 +50,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		activateScene: {
 			name: 'Activate scene',
 			description:
-				'Activate a scene entity (cue, timeline, sound, …). Optional loop overrides the cue/sound loop count (0 = forever).',
+				'Activate a scene entity (cue, timeline, sound, …). Looping uses the cue/sound’s saved Loop setting in the DMX Core Web UI (0 = forever).',
 			options: [
 				{
 					id: 'code',
@@ -66,36 +60,11 @@ export function UpdateActions(self: ModuleInstance): void {
 					choices: scenes,
 					allowCustom: true,
 				},
-				{
-					id: 'overrideLoop',
-					type: 'checkbox',
-					label: 'Override loop count',
-					default: true,
-					disableAutoExpression: true,
-					tooltip:
-						'When enabled, send a loop count with activate (same idea as OSC loop / scripting playCue). When disabled, the device uses the cue/sound’s saved Loop setting.',
-				},
-				{
-					id: 'loopCount',
-					type: 'number',
-					label: 'Loop count (0 = forever)',
-					default: 0,
-					min: 0,
-					max: 9999,
-					step: 1,
-					isVisibleExpression: '$(options:overrideLoop) === true',
-				},
 			],
 			callback: async (action) => {
 				const code = String(action.options.code ?? '').trim()
 				if (!code) return
-				const overrideLoop = action.options.overrideLoop !== false
-				const loopCount = Number(action.options.loopCount)
-				await self.execute({
-					code,
-					command: 'activate',
-					...(overrideLoop ? { loop: Number.isFinite(loopCount) ? Math.max(0, Math.floor(loopCount)) : 0 } : {}),
-				})
+				await self.execute({ code, command: 'activate' })
 			},
 		},
 		activateButton: {
