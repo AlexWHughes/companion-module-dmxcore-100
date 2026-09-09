@@ -1,5 +1,5 @@
 import type { CompanionVariableDefinition } from '@companion-module/base'
-import { SYSTEM_MASTER, SYSTEM_NOW_PLAYING, type EntityKind } from './constants.js'
+import { SYSTEM_AUDIO_VOLUME, SYSTEM_MASTER, SYSTEM_NOW_PLAYING, type EntityKind } from './constants.js'
 import {
 	entityVariableId,
 	entityVariableName,
@@ -8,7 +8,7 @@ import {
 	type EntityState,
 	type IntegrationEntity,
 } from './entities.js'
-import { formatPercent } from './util.js'
+import { formatPercentUnit } from './util.js'
 
 export interface DmxCoreState {
 	connected: boolean
@@ -106,6 +106,7 @@ export function variableDefinitionsFromState(state: DmxCoreState): Record<string
 		now_playing: { name: 'Now playing' },
 		master_percent: { name: 'Master dimmer (%)' },
 		master_level: { name: 'Master dimmer (0–1)' },
+		audio_volume_percent: { name: 'Audio volume (%)' },
 		entity_count: { name: 'Catalog entity count' },
 		show_name: { name: 'Show name' },
 		hostname: { name: 'Hostname' },
@@ -138,6 +139,8 @@ export function variableDefinitionsFromState(state: DmxCoreState): Record<string
 
 export function variableValuesFromState(state: DmxCoreState): Record<string, string | number | undefined> {
 	const master = getLevel(state, SYSTEM_MASTER)
+	const audioCode = findAudioVolumeCode(state)
+	const audio = audioCode ? getLevel(state, audioCode) : null
 	const status = state.status
 	const values: Record<string, string | number | undefined> = {
 		product: state.info?.product ?? '',
@@ -147,8 +150,9 @@ export function variableValuesFromState(state: DmxCoreState): Record<string, str
 		protocol_version: state.info ? String(state.info.protocolVersion) : '',
 		connected: state.connected ? 'true' : 'false',
 		now_playing: nowPlayingLabel(state),
-		master_percent: formatPercent(master),
+		master_percent: formatPercentUnit(master),
 		master_level: master === null ? '' : String(master),
+		audio_volume_percent: formatPercentUnit(audio),
 		entity_count: String(state.entities.size),
 		show_name: status?.showName ?? '',
 		hostname: status?.hostName ?? '',
@@ -181,12 +185,22 @@ export function variableValuesFromState(state: DmxCoreState): Record<string, str
 	return values
 }
 
+function findAudioVolumeCode(state: DmxCoreState): string | null {
+	if (state.entities.has(SYSTEM_AUDIO_VOLUME)) return SYSTEM_AUDIO_VOLUME
+	for (const entity of state.entities.values()) {
+		if (entity.kind !== 'level') continue
+		const hay = `${entity.code} ${entity.name}`.toLowerCase()
+		if (/audio\s*volume|audiovolume|audio\.volume/.test(hay)) return entity.code
+	}
+	return null
+}
+
 function formatEntityVariable(kind: EntityKind, entityState: EntityState | undefined): string {
 	switch (kind) {
 		case 'switch':
 			return entityState?.isOn ? 'on' : 'off'
 		case 'level':
-			return formatPercent(typeof entityState?.level === 'number' ? entityState.level : null)
+			return formatPercentUnit(typeof entityState?.level === 'number' ? entityState.level : null)
 		case 'select':
 			return entityState?.choice ?? ''
 		case 'sensor':

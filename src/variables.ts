@@ -12,6 +12,7 @@ export type VariablesSchema = {
 	now_playing: string
 	master_percent: string
 	master_level: string
+	audio_volume_percent: string
 	entity_count: string
 	show_name: string
 	hostname: string

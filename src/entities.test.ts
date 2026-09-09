@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { buildBaseUrl, buildDeviceApiUrl, buildWsUrl } from './api.js'
 import { entityVariableId, parseDeviceInfo, parseDeviceStatus, parseEntities, parseStates } from './entities.js'
 import { applyStates, createInitialState, replaceCatalog, variableValuesFromState } from './state.js'
-import { formatPercent, percentToLevel } from './util.js'
+import { formatPercent, formatPercentUnit, percentToLevel } from './util.js'
 
 void test('builds Integration API URLs', () => {
 	const config = { host: '10.0.0.5', port: 80, useHttps: false, allowInsecureTls: false }
@@ -80,10 +80,13 @@ void test('parses device info and state frames', () => {
 			{ code: 'system.nowplaying', text: 'Intro' },
 		],
 	})
+	assert.ok(states)
 	assert.equal(states.length, 3)
 	assert.equal(states[0]?.level, 0.4)
 	assert.equal(states[1]?.isOn, true)
 	assert.equal(states[2]?.text, 'Intro')
+	assert.equal(parseStates({ states: 'nope' }), null)
+	assert.equal(parseStates(null), null)
 })
 
 void test('applies catalog and state into variables', () => {
@@ -144,8 +147,9 @@ void test('applies catalog and state into variables', () => {
 	assert.equal(values.cpu_temp_c, '50.5')
 	assert.equal(values.connected, 'true')
 	assert.equal(values.now_playing, 'cue.INTRO')
-	assert.equal(values.master_percent, '25')
-	assert.equal(values[entityVariableId('level', 'system.masterdimmer')], '25')
+	assert.equal(values.master_percent, '25%')
+	assert.equal(values.audio_volume_percent, '')
+	assert.equal(values[entityVariableId('level', 'system.masterdimmer')], '25%')
 	assert.equal(values[entityVariableId('switch', 'preset.PARTY')], 'on')
 	assert.equal(values[entityVariableId('select', 'look.Mode')], 'B')
 	assert.equal(values[entityVariableId('sensor', 'system.nowplaying')], 'cue.INTRO')
@@ -156,10 +160,23 @@ void test('applies catalog and state into variables', () => {
 
 void test('merges partial state updates', () => {
 	const state = createInitialState()
-	applyStates(state, [{ code: 'system.masterdimmer', level: 0.5, isOn: true }], true)
-	applyStates(state, [{ code: 'system.masterdimmer', level: 0.8 }], false)
-	assert.equal(state.states.get('system.masterdimmer')?.level, 0.8)
+	replaceCatalog(state, [
+		{ code: 'system.masterdimmer', name: 'Master', kind: 'level' },
+		{ code: 'system.audiovolume', name: 'Audio Volume', kind: 'level' },
+	])
+	applyStates(
+		state,
+		[
+			{ code: 'system.masterdimmer', level: 0.5, isOn: true },
+			{ code: 'system.audiovolume', level: 0.8 },
+		],
+		true,
+	)
+	applyStates(state, [{ code: 'system.masterdimmer', level: 0.25 }], false)
+	assert.equal(state.states.get('system.masterdimmer')?.level, 0.25)
 	assert.equal(state.states.get('system.masterdimmer')?.isOn, true)
+	assert.equal(state.states.get('system.audiovolume')?.level, 0.8)
+	assert.equal(variableValuesFromState(state).audio_volume_percent, '80%')
 })
 
 void test('full state replace wipes previous entities', () => {
@@ -183,5 +200,8 @@ void test('converts percent levels for execute payloads', () => {
 	assert.equal(percentToLevel(50), 0.5)
 	assert.equal(percentToLevel(100), 1)
 	assert.equal(formatPercent(0.255), '25.5')
+	assert.equal(formatPercentUnit(null), '')
+	assert.equal(formatPercentUnit(0.5), '50%')
+	assert.equal(formatPercentUnit(0), '0%')
 	assert.equal(entityVariableId('level', 'system.masterdimmer'), 'level_system_masterdimmer')
 })

@@ -103,10 +103,10 @@ export function parseStateEntry(raw: unknown): EntityState | null {
 	return state
 }
 
-export function parseStates(raw: unknown): EntityState[] {
-	if (!raw || typeof raw !== 'object') return []
+export function parseStates(raw: unknown): EntityState[] | null {
+	if (!raw || typeof raw !== 'object') return null
 	const states = (raw as { states?: unknown }).states
-	if (!Array.isArray(states)) return []
+	if (!Array.isArray(states)) return null
 	return states.map(parseStateEntry).filter((s): s is EntityState => s !== null)
 }
 
