@@ -134,7 +134,9 @@ export function UpdateActions(self: ModuleInstance): void {
 				const code = String(action.options.code ?? '').trim()
 				if (!code) return
 				const percent = Number(action.options.percent)
-				await self.execute({ code, command: 'setLevel', level: percentToLevel(percent) }, { preferWs: true })
+				const level = percentToLevel(percent)
+				const accepted = await self.execute({ code, command: 'setLevel', level }, { preferWs: true })
+				if (accepted) self.applyLocalLevel(code, level)
 			},
 		},
 		bumpLevel: {
@@ -164,7 +166,9 @@ export function UpdateActions(self: ModuleInstance): void {
 				if (!code) return
 				const current = getLevel(self.state, code) ?? 0
 				const nextPercent = clamp(current * 100 + Number(action.options.deltaPercent), 0, 100)
-				await self.execute({ code, command: 'setLevel', level: percentToLevel(nextPercent) }, { preferWs: true })
+				const level = percentToLevel(nextPercent)
+				const accepted = await self.execute({ code, command: 'setLevel', level }, { preferWs: true })
+				if (accepted) self.applyLocalLevel(code, level)
 			},
 		},
 		setChoice: {

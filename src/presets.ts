@@ -3,7 +3,7 @@ import type { ModuleSchema } from './main.js'
 import type ModuleInstance from './main.js'
 import { Colors, SYSTEM_AUDIO_VOLUME, SYSTEM_MASTER, SYSTEM_STOP } from './constants.js'
 import type { IntegrationEntity } from './entities.js'
-import { entitiesOfKind, entityVariableId } from './entities.js'
+import { entitiesOfKind } from './entities.js'
 
 /** Fixed size so labels stay readable without auto upsizing that mid-word wraps. */
 const PRESET_TEXT_SIZE: CompanionTextSize = '14'
@@ -58,6 +58,19 @@ function findAudioVolume(levels: IntegrationEntity[]): IntegrationEntity | undef
 		levels.find((level) => level.code.toLowerCase() === SYSTEM_AUDIO_VOLUME) ??
 		levels.find((level) => isAudioVolumeEntity(level))
 	)
+}
+
+function scenePlaybackKind(code: string): 'cue' | 'timeline' | 'sound' {
+	const prefix = code.split('.')[0]?.toLowerCase() ?? ''
+	switch (prefix) {
+		case 'timeline':
+			return 'timeline'
+		case 'sound':
+			return 'sound'
+		case 'cue':
+		default:
+			return 'cue'
+	}
 }
 
 export function UpdatePresets(self: ModuleInstance): void {
@@ -156,7 +169,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			type: 'simple',
 			name: 'Master Dimmer',
 			keywords: ['master', 'dimmer', 'encoder', 'rotary'],
-			style: buttonStyle(`Master\nDimmer\n${varRef(label, 'master_percent')}%`, Colors.Master, Colors.Black),
+			style: buttonStyle(`Master\nDimmer\n${varRef(label, 'master_percent')}`, Colors.Master, Colors.Black),
 			options: { stepAutoProgress: false },
 			steps: [
 				{
@@ -188,15 +201,20 @@ export function UpdatePresets(self: ModuleInstance): void {
 		},
 	}
 
-	const scenePresetIds: string[] = []
+	const cuePresetIds: string[] = []
+	const timelinePresetIds: string[] = []
+	const soundPresetIds: string[] = []
+
 	for (const scene of scenes) {
-		const id = presetId('scene', scene.code)
-		scenePresetIds.push(id)
+		const kind = scenePlaybackKind(scene.code)
+		const id = presetId(kind === 'timeline' ? 'timeline' : kind === 'sound' ? 'sound' : 'scene', scene.code)
+		const groupIds = kind === 'timeline' ? timelinePresetIds : kind === 'sound' ? soundPresetIds : cuePresetIds
+		groupIds.push(id)
 		presets[id] = {
 			type: 'simple',
 			name: `Play ${scene.name}`,
-			keywords: ['scene', 'cue', 'play', scene.code],
-			style: buttonStyle(shortLabel(scene), Colors.Play),
+			keywords: [kind, 'scene', 'play', scene.code],
+			style: buttonStyle(shortLabel(scene), kind === 'timeline' ? Colors.Effect : Colors.Play),
 			steps: [
 				{
 					down: [
@@ -218,7 +236,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 		}
 	}
 
-	if (scenePresetIds.length === 0) {
+	if (cuePresetIds.length === 0 && timelinePresetIds.length === 0 && soundPresetIds.length === 0) {
 		presets.activate_scene = {
 			type: 'simple',
 			name: 'Activate Scene',
@@ -237,7 +255,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			],
 			feedbacks: [],
 		}
-		scenePresetIds.push('activate_scene')
+		cuePresetIds.push('activate_scene')
 	}
 
 	const switchPresetIds: string[] = []
@@ -289,12 +307,11 @@ export function UpdatePresets(self: ModuleInstance): void {
 	const audioVolumeCode = audioVolume?.code
 
 	if (audioVolume && audioVolumeCode) {
-		const audioVar = entityVariableId('level', audioVolumeCode)
 		presets.audio_volume_encoder = {
 			type: 'simple',
 			name: 'Audio Volume',
 			keywords: ['audio', 'volume', 'encoder', 'rotary', audioVolumeCode],
-			style: buttonStyle(`Audio\nVolume\n${varRef(label, audioVar)}%`, Colors.Master, Colors.Black),
+			style: buttonStyle(`Audio\nVolume\n${varRef(label, 'audio_volume_percent')}`, Colors.Master, Colors.Black),
 			options: { stepAutoProgress: false },
 			steps: [
 				{
@@ -339,8 +356,18 @@ export function UpdatePresets(self: ModuleInstance): void {
 		{
 			id: 'playback',
 			name: 'Playback',
-			description: 'Scenes from the live catalog. Looping follows each cue/sound’s Web UI Loop setting.',
-			definitions: [{ id: 'scenes', type: 'simple', name: 'Scenes', presets: scenePresetIds }],
+			description: 'Scenes, timelines, and sounds from the live catalog.',
+			definitions: [
+				...(cuePresetIds.length
+					? [{ id: 'scenes', type: 'simple' as const, name: 'Scenes', presets: cuePresetIds }]
+					: []),
+				...(timelinePresetIds.length
+					? [{ id: 'timelines', type: 'simple' as const, name: 'Timelines', presets: timelinePresetIds }]
+					: []),
+				...(soundPresetIds.length
+					? [{ id: 'sounds', type: 'simple' as const, name: 'Sounds', presets: soundPresetIds }]
+					: []),
+			],
 		},
 	]
 

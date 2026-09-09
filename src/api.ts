@@ -104,7 +104,9 @@ export class IntegrationApiClient {
 
 	async getState(): Promise<EntityState[]> {
 		const raw = await this.#requestJson('GET', '/state')
-		return parseStates(raw)
+		const states = parseStates(raw)
+		if (!states) throw new IntegrationApiError(0, 'Invalid /state response')
+		return states
 	}
 
 	async execute(request: ExecuteRequest): Promise<void> {

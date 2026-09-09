@@ -35,6 +35,8 @@ export class IntegrationEventSocket {
 	#sawHello = false
 	#reconnectDelay = WS_RECONNECT_MS
 	#lastPongAt = 0
+	/** Next `state` frame is a full snapshot (connect bootstrap or after catalog). */
+	#awaitingFullState = true
 
 	constructor(config: ModuleConfig, apiKey: string, handlers: EventsHandlers) {
 		this.#config = config
@@ -70,6 +72,10 @@ export class IntegrationEventSocket {
 		}
 	}
 
+	/**
+	 * Queue an execute frame on the event socket.
+	 * @returns true if the frame was written to the socket — not a device execution acknowledgement.
+	 */
 	sendExecute(request: ExecuteRequest): boolean {
 		return this.#send({ type: 'execute', ...request })
 	}
@@ -81,6 +87,7 @@ export class IntegrationEventSocket {
 	#connect(): void {
 		this.#clearTimers()
 		this.#sawHello = false
+		this.#awaitingFullState = true
 
 		const previous = this.#socket
 		this.#socket = undefined
@@ -171,12 +178,19 @@ export class IntegrationEventSocket {
 				return
 			}
 			case 'catalog': {
+				// Device sends a full state snapshot after catalog changes.
+				this.#awaitingFullState = true
 				this.#handlers.onCatalog(parseEntities(frame))
 				return
 			}
 			case 'state': {
 				const states = parseStates(frame)
-				const full = Array.isArray((frame as { states?: unknown }).states)
+				if (!states) {
+					this.#handlers.onError('Invalid state frame')
+					return
+				}
+				const full = this.#awaitingFullState
+				this.#awaitingFullState = false
 				this.#handlers.onState(states, full)
 				return
 			}

@@ -65,23 +65,33 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		return GetConfigFields()
 	}
 
-	async execute(request: ExecuteRequest, options?: { preferWs?: boolean }): Promise<void> {
+	async execute(request: ExecuteRequest, options?: { preferWs?: boolean }): Promise<boolean> {
 		if (!this.#api) {
 			this.log('warn', `Cannot execute ${request.command} on ${request.code}: not connected`)
-			return
+			return false
 		}
 
 		try {
 			if (options?.preferWs && this.#events?.sendExecute(request)) {
+				// WS execute is fire-and-forget; the device does not ACK success (only error frames).
+				// Return false so callers wait for state events before treating it as confirmed.
 				this.log('debug', `WS execute ${request.command} ${request.code}`)
-				return
+				return false
 			}
 
 			await this.#api.execute(request)
 			this.log('debug', `HTTP execute ${request.command} ${request.code}`)
+			return true
 		} catch (error) {
 			this.#handleApiError('execute', error)
+			return false
 		}
+	}
+
+	/** Optimistically update a level so rotary labels refresh before the WS state echo. */
+	applyLocalLevel(code: string, level: number): void {
+		applyStates(this.state, [{ code, level }], false)
+		this.#publishState()
 	}
 
 	async refreshCatalog(): Promise<void> {

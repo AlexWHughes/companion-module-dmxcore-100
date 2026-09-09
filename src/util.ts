@@ -19,3 +19,9 @@ export function formatPercent(level: number | null): string {
 	const percent = levelToPercent(level)
 	return Number.isInteger(percent) ? String(percent) : percent.toFixed(1)
 }
+
+/** Button-safe percent label. Unknown levels stay blank (not 0%) so other faders aren’t shown as muted. */
+export function formatPercentUnit(level: number | null): string {
+	if (level === null) return ''
+	return `${formatPercent(level)}%`
+}

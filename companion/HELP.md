@@ -31,7 +31,7 @@ This is an OS permission issue, not a wrong API key or port.
 
 After the connection is online, open the Presets tab. Buttons are built from the **live catalog**:
 
-- **Playback** — one button per scene (cues / timelines / sounds)
+- **Playback** — **Scenes** (cues) and **Timelines** as separate groups (plus **Sounds** when present)
 - **Looks & buttons → Control** — switch toggles, then **Stop Playback**; other system buttons under Buttons
 - **Levels → Rotary** — Master Dimmer and Audio Volume encoders (±5%); Master dimmer also has 0/50/100% shortcuts
 - **Device → Status** — Now Playing and Refresh Playback objects
@@ -58,7 +58,7 @@ Levels in Companion are **0–100%** and are sent to the device as **0.0–1.0**
 
 ## Variables
 
-Always available: `product`, `device_name`, `serial`, `software_version`, `protocol_version`, `connected`, `now_playing` (shows `Stopped` when idle), `master_percent`, `master_level`, `entity_count`.
+Always available: `product`, `device_name`, `serial`, `software_version`, `protocol_version`, `connected`, `now_playing` (shows `Stopped` when idle), `master_percent` / `audio_volume_percent` (include `%`, e.g. `50%`), `master_level`, `entity_count`.
 
 From device `/api/status` (polled every 30s and on Refresh catalog): `show_name`, `hostname`, `app_version`, `cpu_temp_c`, `board_temp_c`, `sys_cpu_percent`, `app_cpu_percent`, memory/storage fields, `network_speed_mbit`, `audio_available`, `app_uptime_h`, `sys_uptime_h`, `recorder`, `player_name`, `player_code`.
 
