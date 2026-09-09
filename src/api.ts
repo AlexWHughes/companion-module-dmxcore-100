@@ -40,14 +40,6 @@ export function buildWsUrl(config: ModuleConfig): string {
 	return `${scheme}://${host}:${config.port}/api/integration/v1/events`
 }
 
-/** Device root API (not Integration API), e.g. `/api/status`. */
-export function buildDeviceApiUrl(config: ModuleConfig, path: string): string {
-	const host = formatHostForUrl(config.host.trim())
-	const scheme = config.useHttps ? 'https' : 'http'
-	const normalised = path.startsWith('/') ? path : `/${path}`
-	return `${scheme}://${host}:${config.port}${normalised}`
-}
-
 function authHeaders(apiKey: string): Record<string, string> {
 	return {
 		Authorization: `Bearer ${apiKey}`,
@@ -90,10 +82,11 @@ export class IntegrationApiClient {
 		return info
 	}
 
+	/** Health / show snapshot — same Integration `GET /info` as identity (not admin `/api/status`). */
 	async getStatus(): Promise<DeviceStatus> {
-		const raw = await this.#requestJson('GET', '/api/status', undefined, { absolutePath: true })
+		const raw = await this.#requestJson('GET', '/info')
 		const status = parseDeviceStatus(raw)
-		if (!status) throw new IntegrationApiError(0, 'Invalid /api/status response')
+		if (!status) throw new IntegrationApiError(0, 'Invalid /info status snapshot')
 		return status
 	}
 
@@ -113,19 +106,8 @@ export class IntegrationApiClient {
 		await this.#requestJson('POST', '/execute', request)
 	}
 
-	async #requestJson(
-		method: 'GET' | 'POST',
-		path: string,
-		body?: unknown,
-		options?: { absolutePath?: boolean },
-	): Promise<unknown> {
-		const url = new URL(
-			path.startsWith('http')
-				? path
-				: options?.absolutePath
-					? buildDeviceApiUrl(this.#config, path)
-					: `${buildBaseUrl(this.#config)}${path}`,
-		)
+	async #requestJson(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
+		const url = new URL(path.startsWith('http') ? path : `${buildBaseUrl(this.#config)}${path}`)
 
 		const payload = body === undefined ? undefined : JSON.stringify(body)
 		const headers: Record<string, string> = {

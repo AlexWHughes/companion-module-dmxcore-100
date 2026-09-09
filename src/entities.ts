@@ -26,7 +26,10 @@ export type DeviceInfo = {
 	softwareVersion: string
 }
 
-/** Snapshot from device `/api/status` (not Integration API). */
+/**
+ * Health / show snapshot from Integration `GET /info` (polled).
+ * WebSocket `hello` stays identity-only; these fields come from HTTP `/info`.
+ */
 export type DeviceStatus = {
 	hostName: string
 	deviceNickname: string
@@ -57,6 +60,10 @@ export type ExecuteRequest = {
 	command: ExecuteCommand
 	level?: number
 	choice?: string
+	/** Cue/sound only: 0 = forever, 1 = once, N = N times. Omit to use device defaults. */
+	loop?: number
+	fadeInMs?: number
+	fadeOutMs?: number
 }
 
 export function isEntityKind(value: unknown): value is EntityKind {
@@ -148,12 +155,16 @@ export function parseDeviceStatus(raw: unknown): DeviceStatus | null {
 	if (!raw || typeof raw !== 'object') return null
 	const obj = raw as Record<string, unknown>
 
-	// Require at least one identifying field so we don't accept unrelated JSON.
+	// Accept Integration `/info` health payloads (and older shapes that used nickname/appVersion).
 	if (
 		typeof obj.hostName !== 'string' &&
 		typeof obj.deviceNickname !== 'string' &&
 		typeof obj.appVersion !== 'string' &&
-		typeof obj.showName !== 'string'
+		typeof obj.showName !== 'string' &&
+		typeof obj.protocolVersion !== 'number' &&
+		typeof obj.playerCode !== 'string' &&
+		typeof obj.playerName !== 'string' &&
+		typeof obj.recorder !== 'string'
 	) {
 		return null
 	}

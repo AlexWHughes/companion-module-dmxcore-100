@@ -2,7 +2,15 @@ import type { CompanionFeedbackDefinitions } from '@companion-module/base'
 import type ModuleInstance from './main.js'
 import { Colors } from './constants.js'
 import { entityChoices } from './entities.js'
-import { getLevel, isNowPlaying, isSwitchOn, selectChoice, sensorText } from './state.js'
+import {
+	getLevel,
+	isNowPlaying,
+	isSwitchOff,
+	isSwitchOn,
+	nowPlayingMatchesEntity,
+	selectChoice,
+	sensorText,
+} from './state.js'
 import { percentToLevel } from './util.js'
 
 export type FeedbacksSchema = {
@@ -13,6 +21,10 @@ export type FeedbacksSchema = {
 	nowPlaying: {
 		type: 'boolean'
 		options: Record<string, never>
+	}
+	nowPlayingMatches: {
+		type: 'boolean'
+		options: { code: string }
 	}
 	switchOn: {
 		type: 'boolean'
@@ -41,6 +53,7 @@ export type FeedbacksSchema = {
 }
 
 export function UpdateFeedbacks(self: ModuleInstance): void {
+	const scenes = entityChoices(self.state.entities.values(), 'scene')
 	const switches = entityChoices(self.state.entities.values(), 'switch')
 	const levels = entityChoices(self.state.entities.values(), 'level')
 	const selects = entityChoices(self.state.entities.values(), 'select')
@@ -68,6 +81,31 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			options: [],
 			callback: () => isNowPlaying(self.state),
 		},
+		nowPlayingMatches: {
+			name: 'Now playing matches scene',
+			description:
+				'True when system.nowplaying text contains the scene’s catalog name or code suffix (e.g. Cue: INTRO).',
+			type: 'boolean',
+			defaultStyle: {
+				bgcolor: Colors.Playing,
+				color: Colors.White,
+			},
+			options: [
+				{
+					id: 'code',
+					type: 'dropdown',
+					label: 'Scene',
+					default: scenes[0]?.id ?? '',
+					choices: scenes,
+					allowCustom: true,
+				},
+			],
+			callback: (feedback) => {
+				const code = String(feedback.options.code ?? '').trim()
+				if (!code) return false
+				return nowPlayingMatchesEntity(self.state, code)
+			},
+		},
 		switchOn: {
 			name: 'Switch is on',
 			type: 'boolean',
@@ -89,6 +127,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 		},
 		switchOff: {
 			name: 'Switch is off',
+			description: 'True only when the device has reported off. Missing / unknown state does not light this feedback.',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.Stopped,
@@ -107,7 +146,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			callback: (feedback) => {
 				const code = String(feedback.options.code ?? '').trim()
 				if (!code) return false
-				return !isSwitchOn(self.state, code)
+				return isSwitchOff(self.state, code)
 			},
 		},
 		levelAtLeast: {
@@ -176,6 +215,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 		},
 		choiceEquals: {
 			name: 'Select choice equals',
+			description: 'Case-insensitive match against the device’s current choice (Core returns catalog canonical form).',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.Preset,
@@ -202,7 +242,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				const code = String(feedback.options.code ?? '').trim()
 				const expected = String(feedback.options.choice ?? '').trim()
 				if (!code || !expected) return false
-				return selectChoice(self.state, code) === expected
+				return selectChoice(self.state, code).toLowerCase() === expected.toLowerCase()
 			},
 		},
 		sensorContains: {

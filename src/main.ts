@@ -235,7 +235,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.#publishState()
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
-			this.log('debug', `Device /api/status unavailable: ${message}`)
+			this.log('debug', `Integration /info status snapshot unavailable: ${message}`)
 		}
 	}
 
@@ -265,6 +265,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.checkFeedbacks(
 			'connectionOk',
 			'nowPlaying',
+			'nowPlayingMatches',
 			'switchOn',
 			'switchOff',
 			'levelAtLeast',

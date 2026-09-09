@@ -1,7 +1,7 @@
 import type { CompanionPresetDefinitions, CompanionPresetSection, CompanionTextSize } from '@companion-module/base'
 import type { ModuleSchema } from './main.js'
 import type ModuleInstance from './main.js'
-import { Colors, SYSTEM_AUDIO_VOLUME, SYSTEM_MASTER, SYSTEM_STOP } from './constants.js'
+import { Colors, PLAYBACK_DEFAULT, SYSTEM_AUDIO_VOLUME, SYSTEM_MASTER, SYSTEM_STOP } from './constants.js'
 import type { IntegrationEntity } from './entities.js'
 import { entitiesOfKind } from './entities.js'
 
@@ -220,7 +220,12 @@ export function UpdatePresets(self: ModuleInstance): void {
 					down: [
 						{
 							actionId: 'activateScene',
-							options: { code: scene.code },
+							options: {
+								code: scene.code,
+								loop: PLAYBACK_DEFAULT,
+								fadeInMs: PLAYBACK_DEFAULT,
+								fadeOutMs: PLAYBACK_DEFAULT,
+							},
 						},
 					],
 					up: [],
@@ -228,8 +233,8 @@ export function UpdatePresets(self: ModuleInstance): void {
 			],
 			feedbacks: [
 				{
-					feedbackId: 'sensorContains',
-					options: { code: 'system.nowplaying', text: scene.code.replace(/^(cue|timeline|sound)\./i, '') },
+					feedbackId: 'nowPlayingMatches',
+					options: { code: scene.code },
 					style: { bgcolor: Colors.Playing, color: Colors.White },
 				},
 			],
@@ -247,7 +252,12 @@ export function UpdatePresets(self: ModuleInstance): void {
 					down: [
 						{
 							actionId: 'activateScene',
-							options: { code: 'cue.INTRO' },
+							options: {
+								code: 'cue.INTRO',
+								loop: PLAYBACK_DEFAULT,
+								fadeInMs: PLAYBACK_DEFAULT,
+								fadeOutMs: PLAYBACK_DEFAULT,
+							},
 						},
 					],
 					up: [],
