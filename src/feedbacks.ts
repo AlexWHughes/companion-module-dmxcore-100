@@ -1,83 +1,117 @@
 import type { CompanionFeedbackDefinitions } from '@companion-module/base'
 import type ModuleInstance from './main.js'
 import { Colors } from './constants.js'
-import { isCuePlaying } from './state.js'
-import { parseCodeList, percentToLevel } from './util.js'
+import { entityChoices } from './entities.js'
+import { getLevel, isNowPlaying, isSwitchOn, selectChoice, sensorText } from './state.js'
+import { percentToLevel } from './util.js'
 
 export type FeedbacksSchema = {
-	cuePlaying: {
+	connectionOk: {
+		type: 'boolean'
+		options: Record<string, never>
+	}
+	nowPlaying: {
+		type: 'boolean'
+		options: Record<string, never>
+	}
+	switchOn: {
 		type: 'boolean'
 		options: { code: string }
 	}
-	playbackStopped: {
+	switchOff: {
 		type: 'boolean'
-		options: Record<string, never>
+		options: { code: string }
 	}
-	identifyOn: {
-		type: 'boolean'
-		options: Record<string, never>
-	}
-	masterAtLeast: {
-		type: 'boolean'
-		options: { percent: number }
-	}
-	masterAtMost: {
-		type: 'boolean'
-		options: { percent: number }
-	}
-	controlAtLeast: {
+	levelAtLeast: {
 		type: 'boolean'
 		options: { code: string; percent: number }
 	}
-	statusContains: {
+	levelAtMost: {
 		type: 'boolean'
-		options: { text: string }
+		options: { code: string; percent: number }
+	}
+	choiceEquals: {
+		type: 'boolean'
+		options: { code: string; choice: string }
+	}
+	sensorContains: {
+		type: 'boolean'
+		options: { code: string; text: string }
 	}
 }
 
 export function UpdateFeedbacks(self: ModuleInstance): void {
+	const switches = entityChoices(self.state.entities.values(), 'switch')
+	const levels = entityChoices(self.state.entities.values(), 'level')
+	const selects = entityChoices(self.state.entities.values(), 'select')
+	const sensors = entityChoices(self.state.entities.values(), 'sensor')
+
 	const feedbacks: CompanionFeedbackDefinitions<FeedbacksSchema> = {
-		cuePlaying: {
-			name: 'Cue is playing',
-			description: 'True when the given cue code is playing. Leave the code empty to match any cue.',
+		connectionOk: {
+			name: 'Connection OK',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.Playing,
 				color: Colors.White,
 			},
+			options: [],
+			callback: () => self.state.connected,
+		},
+		nowPlaying: {
+			name: 'Something is playing',
+			description: 'True when the now-playing sensor has text (idle shows as Stopped on the variable).',
+			type: 'boolean',
+			defaultStyle: {
+				bgcolor: Colors.Playing,
+				color: Colors.White,
+			},
+			options: [],
+			callback: () => isNowPlaying(self.state),
+		},
+		switchOn: {
+			name: 'Switch is on',
+			type: 'boolean',
+			defaultStyle: {
+				bgcolor: Colors.SwitchOn,
+				color: Colors.Black,
+			},
 			options: [
 				{
 					id: 'code',
-					type: 'textinput',
-					label: 'Cue code (blank = any)',
-					default: '',
-					useVariables: true,
+					type: 'dropdown',
+					label: 'Switch',
+					default: switches[0]?.id ?? '',
+					choices: switches,
+					allowCustom: true,
 				},
 			],
-			callback: (feedback) => isCuePlaying(self.state, String(feedback.options.code ?? '').trim()),
+			callback: (feedback) => isSwitchOn(self.state, String(feedback.options.code ?? '').trim()),
 		},
-		playbackStopped: {
-			name: 'Playback is stopped',
+		switchOff: {
+			name: 'Switch is off',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.Stopped,
 				color: Colors.White,
 			},
-			options: [],
-			callback: () => !self.state.playingCue,
-		},
-		identifyOn: {
-			name: 'Identify blink is on',
-			type: 'boolean',
-			defaultStyle: {
-				bgcolor: Colors.IdentifyOn,
-				color: Colors.Black,
+			options: [
+				{
+					id: 'code',
+					type: 'dropdown',
+					label: 'Switch',
+					default: switches[0]?.id ?? '',
+					choices: switches,
+					allowCustom: true,
+				},
+			],
+			callback: (feedback) => {
+				const code = String(feedback.options.code ?? '').trim()
+				if (!code) return false
+				return !isSwitchOn(self.state, code)
 			},
-			options: [],
-			callback: () => self.state.identify,
 		},
-		masterAtLeast: {
-			name: 'Master dimmer at least',
+		levelAtLeast: {
+			name: 'Level at least',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.Master,
@@ -85,23 +119,31 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			},
 			options: [
 				{
+					id: 'code',
+					type: 'dropdown',
+					label: 'Level',
+					default: levels[0]?.id ?? '',
+					choices: levels,
+					allowCustom: true,
+				},
+				{
 					id: 'percent',
 					type: 'number',
-					label: 'Level (%)',
-					default: 50,
+					label: 'Percent',
+					default: 100,
 					min: 0,
 					max: 100,
-					step: 0.1,
-					range: true,
 				},
 			],
 			callback: (feedback) => {
-				if (self.state.master === null) return false
-				return self.state.master + 0.0005 >= percentToLevel(feedback.options.percent)
+				const code = String(feedback.options.code ?? '').trim()
+				const level = getLevel(self.state, code)
+				if (level === null) return false
+				return level + 1e-6 >= percentToLevel(Number(feedback.options.percent))
 			},
 		},
-		masterAtMost: {
-			name: 'Master dimmer at most',
+		levelAtMost: {
+			name: 'Level at most',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.MasterOff,
@@ -109,23 +151,31 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			},
 			options: [
 				{
+					id: 'code',
+					type: 'dropdown',
+					label: 'Level',
+					default: levels[0]?.id ?? '',
+					choices: levels,
+					allowCustom: true,
+				},
+				{
 					id: 'percent',
 					type: 'number',
-					label: 'Level (%)',
+					label: 'Percent',
 					default: 0,
 					min: 0,
 					max: 100,
-					step: 0.1,
-					range: true,
 				},
 			],
 			callback: (feedback) => {
-				if (self.state.master === null) return false
-				return self.state.master - 0.0005 <= percentToLevel(feedback.options.percent)
+				const code = String(feedback.options.code ?? '').trim()
+				const level = getLevel(self.state, code)
+				if (level === null) return false
+				return level - 1e-6 <= percentToLevel(Number(feedback.options.percent))
 			},
 		},
-		controlAtLeast: {
-			name: 'Control Value at least',
+		choiceEquals: {
+			name: 'Select choice equals',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.Preset,
@@ -134,34 +184,29 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			options: [
 				{
 					id: 'code',
-					type: 'textinput',
-					label: 'Control Value code',
-					default: parseCodeList(self.config.controlCodes)[0] ?? '',
-					useVariables: true,
+					type: 'dropdown',
+					label: 'Select',
+					default: selects[0]?.id ?? '',
+					choices: selects,
+					allowCustom: true,
 				},
 				{
-					id: 'percent',
-					type: 'number',
-					label: 'Level (%)',
-					default: 50,
-					min: 0,
-					max: 100,
-					step: 0.1,
-					range: true,
+					id: 'choice',
+					type: 'textinput',
+					label: 'Choice',
+					default: '',
+					useVariables: true,
 				},
 			],
 			callback: (feedback) => {
-				const code = String(feedback.options.code ?? '')
-					.trim()
-					.toLowerCase()
-				if (!code) return false
-				const level = self.state.controlValues[code]
-				if (level === undefined) return false
-				return level + 0.0005 >= percentToLevel(feedback.options.percent)
+				const code = String(feedback.options.code ?? '').trim()
+				const expected = String(feedback.options.choice ?? '').trim()
+				if (!code || !expected) return false
+				return selectChoice(self.state, code) === expected
 			},
 		},
-		statusContains: {
-			name: 'Status text contains',
+		sensorContains: {
+			name: 'Sensor text contains',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.Play,
@@ -169,19 +214,28 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			},
 			options: [
 				{
+					id: 'code',
+					type: 'dropdown',
+					label: 'Sensor',
+					default: sensors[0]?.id ?? '',
+					choices: sensors,
+					allowCustom: true,
+				},
+				{
 					id: 'text',
 					type: 'textinput',
-					label: 'Text',
-					default: 'Playing',
+					label: 'Contains',
+					default: '',
 					useVariables: true,
 				},
 			],
 			callback: (feedback) => {
+				const code = String(feedback.options.code ?? '').trim()
 				const needle = String(feedback.options.text ?? '')
 					.trim()
 					.toLowerCase()
-				if (!needle) return false
-				return self.state.statusText.toLowerCase().includes(needle)
+				if (!code || !needle) return false
+				return sensorText(self.state, code).toLowerCase().includes(needle)
 			},
 		},
 	}

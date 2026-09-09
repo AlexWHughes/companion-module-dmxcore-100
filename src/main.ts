@@ -1,24 +1,26 @@
-import {
-	InstanceBase,
-	InstanceStatus,
-	type SharedUdpSocket,
-	type SomeCompanionConfigField,
-} from '@companion-module/base'
-import type { RemoteInfo } from 'node:dgram'
-import { GetConfigFields, type ModuleConfig } from './config.js'
+import { InstanceBase, InstanceStatus, type SomeCompanionConfigField } from '@companion-module/base'
+import { GetConfigFields, type ModuleConfig, type ModuleSecrets } from './config.js'
 import { UpdateVariableDefinitions, type VariablesSchema } from './variables.js'
 import { UpgradeScripts } from './upgrades.js'
 import { UpdateActions, type ActionsSchema } from './actions.js'
 import { UpdateFeedbacks, type FeedbacksSchema } from './feedbacks.js'
 import { UpdatePresets } from './presets.js'
-import { DEFAULT_FEEDBACK_PORT, DEFAULT_OSC_PORT, FEEDBACK_WAIT_MS } from './constants.js'
-import { decodeOscPacket, encodeOscMessage, flattenOscPackets, OscAddress, toOscSendArgs, type OscArg } from './osc.js'
-import { applyOscMessage, createInitialState, type DmxCoreState, variableValuesFromState } from './state.js'
-import { parseCodeList } from './util.js'
+import { DEFAULT_HTTP_PORT, STATUS_POLL_MS, SUPPORTED_PROTOCOL_VERSION } from './constants.js'
+import { IntegrationApiClient, IntegrationApiError } from './api.js'
+import { IntegrationEventSocket } from './events.js'
+import type { DeviceInfo, EntityState, ExecuteRequest, IntegrationEntity } from './entities.js'
+import {
+	applyStates,
+	createInitialState,
+	displayDeviceName,
+	replaceCatalog,
+	type DmxCoreState,
+	variableValuesFromState,
+} from './state.js'
 
 export type ModuleSchema = {
 	config: ModuleConfig
-	secrets: undefined
+	secrets: ModuleSecrets
 	actions: ActionsSchema
 	feedbacks: FeedbacksSchema
 	variables: VariablesSchema
@@ -28,21 +30,23 @@ export { UpgradeScripts }
 
 export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	config!: ModuleConfig
+	secrets: ModuleSecrets = { apiKey: '' }
 	readonly state: DmxCoreState = createInitialState()
 
-	#socket: SharedUdpSocket | undefined
-	#pingTimer: ReturnType<typeof setInterval> | undefined
-	#feedbackTimer: ReturnType<typeof setTimeout> | undefined
-	#receivedFeedback = false
+	#api: IntegrationApiClient | undefined
+	#events: IntegrationEventSocket | undefined
+	#connectGeneration = 0
+	#statusPollTimer: ReturnType<typeof setInterval> | undefined
 
 	constructor(internal: unknown) {
 		super(internal)
 	}
 
-	async init(config: ModuleConfig): Promise<void> {
+	async init(config: ModuleConfig, _isFirstInit: boolean, secrets: ModuleSecrets): Promise<void> {
 		this.config = this.#normaliseConfig(config)
+		this.secrets = this.#normaliseSecrets(secrets)
 		this.#exportDefinitions()
-		this.#startConnection()
+		await this.#startConnection()
 	}
 
 	async destroy(): Promise<void> {
@@ -50,52 +54,65 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.log('debug', 'DMX Core connection closed')
 	}
 
-	async configUpdated(config: ModuleConfig): Promise<void> {
+	async configUpdated(config: ModuleConfig, secrets: ModuleSecrets): Promise<void> {
 		this.config = this.#normaliseConfig(config)
+		this.secrets = this.#normaliseSecrets(secrets)
 		this.#exportDefinitions()
-		this.#startConnection()
+		await this.#startConnection()
 	}
 
 	getConfigFields(): SomeCompanionConfigField[] {
 		return GetConfigFields()
 	}
 
-	sendCommand(path: string, args: OscArg[] = [], statePatch?: Partial<DmxCoreState>): void {
-		const host = this.config.host.trim()
-		if (!host) {
-			this.log('warn', `Cannot send ${path}: no DMX Core host configured`)
+	async execute(request: ExecuteRequest, options?: { preferWs?: boolean }): Promise<void> {
+		if (!this.#api) {
+			this.log('warn', `Cannot execute ${request.command} on ${request.code}: not connected`)
 			return
 		}
 
-		if (statePatch) {
-			Object.assign(this.state, statePatch)
-			this.#publishState()
+		try {
+			if (options?.preferWs && this.#events?.sendExecute(request)) {
+				this.log('debug', `WS execute ${request.command} ${request.code}`)
+				return
+			}
+
+			await this.#api.execute(request)
+			this.log('debug', `HTTP execute ${request.command} ${request.code}`)
+		} catch (error) {
+			this.#handleApiError('execute', error)
+		}
+	}
+
+	async refreshCatalog(): Promise<void> {
+		if (!this.#api) {
+			this.log('warn', 'Cannot refresh catalog: not connected')
+			return
 		}
 
-		const port = this.config.port
 		try {
-			if (this.#socket) {
-				const packet = encodeOscMessage(path, args)
-				this.#socket.send(packet, port, host)
-			} else {
-				this.oscSend(host, port, path, toOscSendArgs(args))
-			}
-			this.log('debug', `OSC → ${host}:${port} ${path} ${args.map((arg) => `${arg.type}:${arg.value}`).join(' ')}`)
+			const [entities, states] = await Promise.all([this.#api.getCatalog(), this.#api.getState()])
+			this.#onCatalog(entities)
+			this.#onState(states, true)
+			await this.#refreshStatus()
+			this.log('info', `Refreshed catalog (${entities.length} entities)`)
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
-			this.log('error', `Failed to send OSC ${path}: ${message}`)
-			this.updateStatus(InstanceStatus.ConnectionFailure, message)
+			this.#handleApiError('refresh', error)
 		}
 	}
 
 	#normaliseConfig(config: ModuleConfig): ModuleConfig {
 		return {
 			host: config.host ?? '',
-			port: config.port || DEFAULT_OSC_PORT,
-			listenForFeedback: config.listenForFeedback !== false,
-			feedbackPort: config.feedbackPort || DEFAULT_FEEDBACK_PORT,
-			pingInterval: config.pingInterval ?? 10,
-			controlCodes: config.controlCodes ?? '',
+			port: config.port || DEFAULT_HTTP_PORT,
+			useHttps: config.useHttps === true,
+			allowInsecureTls: config.allowInsecureTls === true,
+		}
+	}
+
+	#normaliseSecrets(secrets: ModuleSecrets | undefined): ModuleSecrets {
+		return {
+			apiKey: secrets?.apiKey ?? '',
 		}
 	}
 
@@ -106,117 +123,168 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		UpdateVariableDefinitions(this)
 	}
 
-	#startConnection(): void {
+	async #startConnection(): Promise<void> {
 		this.#stopConnection()
+		const generation = ++this.#connectGeneration
 
-		if (!this.config.host.trim()) {
+		const host = this.config.host.trim()
+		const apiKey = this.secrets.apiKey.trim()
+
+		if (!host) {
 			this.updateStatus(InstanceStatus.BadConfig, 'Set the DMX Core IP address')
 			return
 		}
-
-		if (!this.config.listenForFeedback) {
-			this.updateStatus(InstanceStatus.Ok, 'Sending OSC (feedback disabled)')
-			this.#sendKeepalive()
-			this.#startPingTimer()
+		if (!apiKey) {
+			this.updateStatus(InstanceStatus.BadConfig, 'Set the Integration API key')
 			return
 		}
 
-		this.updateStatus(InstanceStatus.Connecting, `Listening for feedback on UDP ${this.config.feedbackPort}`)
-		this.#socket = this.createSharedUdpSocket('udp4', (msg, rinfo) => this.#onMessage(msg, rinfo))
-		this.#socket.on('error', (error) => {
-			this.log('error', `OSC listen error: ${error.message}`)
-			this.updateStatus(InstanceStatus.ConnectionFailure, error.message)
-		})
-		this.#socket.on('listening', () => {
-			this.log('info', `Listening for DMX Core OSC feedback on UDP ${this.config.feedbackPort}`)
-			this.#sendKeepalive()
-			this.#startPingTimer()
-			this.#feedbackTimer = setTimeout(() => {
-				if (!this.#receivedFeedback) {
-					this.updateStatus(
-						InstanceStatus.UnknownWarning,
-						'No OSC feedback yet. Add this Companion IP as an OSC Client on the DMX Core (feedback port must match).',
-					)
+		this.updateStatus(InstanceStatus.Connecting, `Contacting ${host}:${this.config.port}`)
+		this.#api = new IntegrationApiClient({ config: this.config, apiKey })
+
+		try {
+			const info = await this.#api.getInfo()
+			if (generation !== this.#connectGeneration) return
+
+			this.#onHello(info)
+
+			const [entities, states] = await Promise.all([this.#api.getCatalog(), this.#api.getState()])
+			if (generation !== this.#connectGeneration) return
+
+			this.#onCatalog(entities)
+			this.#onState(states, true)
+			await this.#refreshStatus()
+			if (generation !== this.#connectGeneration) return
+			this.#startStatusPoll()
+		} catch (error) {
+			if (generation !== this.#connectGeneration) return
+			this.#api?.destroy()
+			this.#api = undefined
+			this.#handleApiError('connect', error)
+			return
+		}
+
+		this.#events = new IntegrationEventSocket(this.config, apiKey, {
+			onOpen: () => {
+				this.log('debug', 'Integration API WebSocket open')
+			},
+			onHello: (info) => {
+				this.#onHello(info)
+				this.state.connected = true
+				const label = displayDeviceName(this.state) || host
+				this.updateStatus(InstanceStatus.Ok, `${label} (protocol ${info.protocolVersion})`)
+				this.#publishState()
+			},
+			onCatalog: (entities) => this.#onCatalog(entities),
+			onState: (states, full) => this.#onState(states, full),
+			onError: (message) => {
+				this.log('warn', `Integration API event error: ${message}`)
+			},
+			onClose: () => {
+				this.state.connected = false
+				this.#publishState()
+				if (this.#api) {
+					this.updateStatus(InstanceStatus.Connecting, 'WebSocket reconnecting…')
 				}
-			}, FEEDBACK_WAIT_MS)
+			},
+			log: (level, message) => this.log(level, message),
 		})
-		this.#socket.bind(this.config.feedbackPort)
+		this.#events.start()
 	}
 
 	#stopConnection(): void {
-		if (this.#pingTimer) {
-			clearInterval(this.#pingTimer)
-			this.#pingTimer = undefined
-		}
-		if (this.#feedbackTimer) {
-			clearTimeout(this.#feedbackTimer)
-			this.#feedbackTimer = undefined
-		}
+		this.#connectGeneration++
+		this.#stopStatusPoll()
+		this.#events?.stop()
+		this.#events = undefined
+		this.#api?.destroy()
+		this.#api = undefined
+		this.state.connected = false
+		this.state.info = null
+		this.state.status = null
+	}
 
-		this.#receivedFeedback = false
+	#startStatusPoll(): void {
+		this.#stopStatusPoll()
+		this.#statusPollTimer = setInterval(() => {
+			void this.#refreshStatus()
+		}, STATUS_POLL_MS)
+	}
 
-		const socket = this.#socket
-		this.#socket = undefined
-		if (socket) {
-			try {
-				socket.close()
-			} catch (error) {
-				this.log('debug', `Error closing OSC socket: ${error instanceof Error ? error.message : String(error)}`)
-			}
+	#stopStatusPoll(): void {
+		if (this.#statusPollTimer) {
+			clearInterval(this.#statusPollTimer)
+			this.#statusPollTimer = undefined
 		}
 	}
 
-	#startPingTimer(): void {
-		const seconds = this.config.pingInterval
-		if (!seconds || seconds <= 0) return
-
-		this.#pingTimer = setInterval(() => {
-			this.sendCommand(OscAddress.ping)
-		}, seconds * 1000)
-	}
-
-	#sendKeepalive(): void {
-		this.sendCommand(OscAddress.ping)
-		this.sendCommand(OscAddress.status)
-	}
-
-	#onMessage(msg: Buffer, rinfo: RemoteInfo): void {
+	async #refreshStatus(): Promise<void> {
+		if (!this.#api) return
 		try {
-			const packet = decodeOscPacket(msg)
-			const messages = flattenOscPackets(packet)
-			if (messages.length === 0) return
-
-			this.#receivedFeedback = true
-			if (this.#feedbackTimer) {
-				clearTimeout(this.#feedbackTimer)
-				this.#feedbackTimer = undefined
-			}
-			this.updateStatus(InstanceStatus.Ok, `${rinfo.address}:${rinfo.port}`)
-
-			for (const message of messages) {
-				this.log('debug', `OSC ← ${message.address} ${message.args.map((arg) => String(arg.value)).join(' ')}`)
-				applyOscMessage(this.state, message)
-			}
-
+			this.state.status = await this.#api.getStatus()
 			this.#publishState()
 		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			this.log('debug', `Device /api/status unavailable: ${message}`)
+		}
+	}
+
+	#onHello(info: DeviceInfo): void {
+		this.state.info = info
+		if (info.protocolVersion > SUPPORTED_PROTOCOL_VERSION) {
 			this.log(
-				'debug',
-				`Ignoring OSC packet from ${rinfo.address}: ${error instanceof Error ? error.message : String(error)}`,
+				'warn',
+				`Device protocolVersion ${info.protocolVersion} is newer than supported ${SUPPORTED_PROTOCOL_VERSION}`,
 			)
 		}
 	}
 
+	#onCatalog(entities: IntegrationEntity[]): void {
+		replaceCatalog(this.state, entities)
+		this.#exportDefinitions()
+		this.#publishState()
+	}
+
+	#onState(states: EntityState[], full: boolean): void {
+		applyStates(this.state, states, full)
+		this.#publishState()
+	}
+
 	#publishState(): void {
-		this.setVariableValues(variableValuesFromState(this.state, parseCodeList(this.config.controlCodes)))
+		this.setVariableValues(variableValuesFromState(this.state))
 		this.checkFeedbacks(
-			'cuePlaying',
-			'playbackStopped',
-			'identifyOn',
-			'masterAtLeast',
-			'masterAtMost',
-			'controlAtLeast',
-			'statusContains',
+			'connectionOk',
+			'nowPlaying',
+			'switchOn',
+			'switchOff',
+			'levelAtLeast',
+			'levelAtMost',
+			'choiceEquals',
+			'sensorContains',
 		)
+	}
+
+	#handleApiError(context: string, error: unknown): void {
+		const message = error instanceof Error ? error.message : String(error)
+		this.log('error', `Integration API ${context} failed: ${message}`)
+
+		// Command validation errors should not mark the whole connection as down.
+		if (context === 'execute' && error instanceof IntegrationApiError && error.status >= 400 && error.status < 500) {
+			if (error.status === 401 || error.status === 403) {
+				this.updateStatus(InstanceStatus.AuthenticationFailure, message)
+			}
+			return
+		}
+
+		if (error instanceof IntegrationApiError && (error.status === 401 || error.status === 403)) {
+			this.updateStatus(InstanceStatus.AuthenticationFailure, message)
+			return
+		}
+		if (error instanceof IntegrationApiError && error.status === 404) {
+			this.updateStatus(InstanceStatus.ConnectionFailure, 'Integration API not found (enable it under Device → System)')
+			return
+		}
+
+		this.updateStatus(InstanceStatus.ConnectionFailure, message)
 	}
 }

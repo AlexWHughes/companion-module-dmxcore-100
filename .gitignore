@@ -7,4 +7,5 @@ package-lock.json
 DEBUG-*
 /.yarn
 /.vscode
+.DS_Store
 agent-tools/

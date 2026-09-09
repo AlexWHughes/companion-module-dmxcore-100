@@ -1,63 +1,71 @@
 ## DMX Core 100
 
-Control a [DMX Core 100](https://dmxcore.com/dmx-core-100) from Bitfocus Companion over OSC. Play cues, apply presets, start effects, ride the master dimmer, and show live playback status on Stream Deck buttons.
+Control a [DMX Core 100](https://dmxcore.com/dmx-core-100) from Bitfocus Companion using the **Integration API**. Populate button dropdowns from the device catalog, execute cues/presets/levels, and show live state on Stream Deck buttons over a WebSocket — without registering an OSC Client on the device.
 
-Built-in OSC addresses are documented at [OSC – Open Sound Control](https://docs.dmxcore.com/dmx-core-100/integrations/osc-open-sound-control/).
+API reference: [Integration API](https://docs.dmxcore.com/dmx-core-100/integrations/integration-api/).
 
 ## Setup
 
-1. In Companion, add a connection and choose **DMX Core: DMX Core 100**.
-2. Set **DMX Core IP / hostname** to the device (the OSC server listens on UDP **8000** by default).
-3. Leave **Listen for OSC feedback** enabled and **Feedback listen port** at **9000** unless you changed it.
-4. On the DMX Core Web UI go to **Control & Integrations → OSC Clients**.
-   - Add this Companion machine by IP.
-   - Set the feedback port to the same value as the module (default 9000).
-   - Do **not** bind that OSC client to an OSC control surface. A surface bound to a specific source IP swallows every message from Companion, so the built-in `/dmxcore/...` addresses never run.
-5. Save. The module sends `/ping` and `/dmxcore/status` so the device starts returning live feedback.
+1. On the DMX Core Web UI go to **Device → System** and turn on **Enable Integration API**.
+2. Click **Issue Integration API Key** (or **User Management → API Keys**). Copy the key when it is shown — it is only displayed once.
+3. In Companion, add a connection and choose **DMX Core: DMX Core 100**.
+4. Set **DMX Core IP / hostname** and the **HTTP(S) port** (hardware often **80** / **443**; desktop software **8000** / **8001** — same as the Web UI).
+5. Paste the Integration API key.
+6. Enable **Use HTTPS** only if you reach the device over TLS; tick **Allow insecure TLS** for self-signed certificates.
+7. Save. Companion calls Integration `/info`, loads `/catalog` and `/state`, opens `/events` for live updates, and also reads device `/api/status` for show name, nickname, temps, and health.
 
-Cue, preset, effect, zone, fixture, and Control Value **codes are case-sensitive** and must match the Code / Short Name in the Web UI exactly.
+Keep the device on a trusted network and treat API keys like passwords. When the Integration API is disabled, paths under `/api/integration` return **404**.
+
+### macOS “EHOSTUNREACH” / no route to host
+
+If Companion logs `connect EHOSTUNREACH` to a LAN IP but a browser or `curl` from the same Mac works, macOS is blocking Companion’s **Local Network** access (common on Sequoia / Tahoe).
+
+1. Open **System Settings → Privacy & Security → Local Network**.
+2. Ensure **Companion** is enabled.
+3. If it already looks enabled, toggle it **off**, quit Companion, toggle **on**, then reopen Companion.
+4. Retry the connection.
+
+This is an OS permission issue, not a wrong API key or port.
 
 ## Presets
 
-Open the Presets tab and drag buttons onto the grid. Included groups:
+After the connection is online, open the Presets tab. Buttons are built from the **live catalog**:
 
-- **Playback** — Play Cue (`ACT1` as an example), Stop, and a status button that shows `$(status_text)` / `$(playing_cue)`
-- **Looks** — Apply Preset, Start Effect, Clear Effect
-- **Master Dimmer** — 0 / 25 / 50 / 75 / 100%, fade in/out, and a rotary encoder that bumps ±5%
-- **Global Color** — red / green / blue at 100%
-- **Device** — Identify, refresh status, ping, and a custom OSC trigger
+- **Playback** — one button per scene (cues / timelines / sounds)
+- **Looks & buttons** — toggles for each switch, plus other system buttons (blackout, clear ambient, …)
+- **Levels** — master 0 / 50 / 100% + encoder, and 100% shortcuts for other level entities
+- **Device → Status** — Now Playing, Stop, Refresh catalog
 
-After dragging **Play Cue** or **Apply Preset**, edit the action and put in your real codes.
+Scene presets send **loop forever** (`loop: 0`) by default. Re-drag presets after the catalog changes if you add cues on the device.
+
+The Now Playing preset shows the live cue text (green while playing) or **Stopped** when idle. Variable text on buttons uses your connection label, e.g. `$(dmxcore:now_playing)`.
 
 ## Actions
 
-| Action                    | OSC                                                                                                            |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Play Cue                  | `/dmxcore/cue/<code>` optional loop count                                                                      |
-| Stop Playback             | `/dmxcore/cuecontrol/stop`                                                                                     |
-| Apply Preset              | `/dmxcore/preset/<code>` optional fade ms                                                                      |
-| Start / Clear Effect      | `/dmxcore/effect/<code>` and `/dmxcore/effect/none`                                                            |
-| Set / Fade / Bump Master  | `/dmxcore/dimmer/master` and `/dmxcore/dimmer/master/fadeto`                                                   |
-| Set Zone Intensity        | `/dmxcore/dimmer/zone/<code>`                                                                                  |
-| Set Control Value         | `/dmxcore/control/<code>`                                                                                      |
-| Set Global Fixture Color  | `/dmxcore/fixture/red` (green, blue)                                                                           |
-| Set Fixture Channel       | `/dmxcore/fixture/<code>/<dimmer\|red\|green\|blue\|white>`                                                    |
-| Set Default Fade Duration | `/dmxcore/config/fadeduration`                                                                                 |
-| Request Status            | `/dmxcore/status`                                                                                              |
-| Identify Blink            | `/dmxcore/blink` 1 or 0                                                                                        |
-| Send /ping                | `/ping`                                                                                                        |
-| Send Custom OSC           | any address, for [input triggers](https://docs.dmxcore.com/dmx-core-100/scheduling-automation/input-triggers/) |
+| Action | Integration API |
+| --- | --- |
+| Activate scene | `execute` → `activate` on a `scene` entity, optional `loop` (0 = forever) |
+| System actions | `execute` → `activate` on a system button (Stop, Blackout, Clear Ambient, …) |
+| Switch entity | `turnOn` / `turnOff` / `toggle` on a `switch` entity |
+| Set level | `setLevel` with `level` 0–1 (Companion UI is 0–100%) |
+| Bump level | Reads current state, then `setLevel` (prefer WebSocket for encoders) |
+| Set choice | `setChoice` on a `select` entity |
+| Refresh catalog | HTTP `GET /catalog` + `GET /state` |
+
+**Loop:** Enable **Override loop count** on Activate scene to send `loop` with the command (same meaning as OSC / scripting: `0` = forever, `1` = once, `N` = N times). If override is off, the device uses the cue/sound’s saved Loop setting from the Web UI. The public Integration API docs only list `level` / `choice` today; `loop` matches the scripting `playCue` options and is accepted by current firmware.
 
 Levels in Companion are **0–100%** and are sent to the device as **0.0–1.0**.
 
 ## Variables
 
-`status_text`, `playing_cue`, `playback_state`, `master_level`, `master_percent`, `fixture_red`, `fixture_green`, `fixture_blue`, `identify`, `last_feedback_address`, `last_feedback_value`.
+Always available: `product`, `device_name`, `serial`, `software_version`, `protocol_version`, `connected`, `now_playing` (shows `Stopped` when idle), `master_percent`, `master_level`, `entity_count`.
 
-Optional comma-separated **Control Value codes** in the connection config create variables such as `control_dsp1`.
+From device `/api/status` (polled every 30s and on Refresh catalog): `show_name`, `hostname`, `app_version`, `cpu_temp_c`, `board_temp_c`, `sys_cpu_percent`, `app_cpu_percent`, memory/storage fields, `network_speed_mbit`, `audio_available`, `app_uptime_h`, `sys_uptime_h`, `recorder`, `player_name`, `player_code`.
+
+`device_name` prefers the status nickname when present. On buttons use `$(connection-label:now_playing)` (for example `$(dmxcore:now_playing)` or `$(dmxcore:show_name)`).
+
+Catalog entities also create variables such as `level_system_masterdimmer`, `switch_system_mute`, and `sensor_system_nowplaying`.
 
 ## Feedbacks
 
-Use these to light buttons when a cue is playing, playback is stopped, identify is on, or master / Control Value levels cross a threshold.
-
-If buttons never update, confirm the OSC Client on the device uses Companion's IP and the same feedback port, and that the client is not owned by an OSC control surface.
+Use these to light buttons when the connection is up, something is playing, a switch is on/off, a level crosses a threshold, a select matches a choice, or a sensor text contains a string (handy for “this cue is now playing”).

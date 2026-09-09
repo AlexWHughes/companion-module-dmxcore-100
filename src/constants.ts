@@ -1,7 +1,15 @@
-export const DEFAULT_OSC_PORT = 8000
-export const DEFAULT_FEEDBACK_PORT = 9000
-export const DEFAULT_PING_INTERVAL_SEC = 10
-export const FEEDBACK_WAIT_MS = 15000
+export const DEFAULT_HTTP_PORT = 80
+export const SUPPORTED_PROTOCOL_VERSION = 1
+export const REQUEST_TIMEOUT_MS = 10000
+export const WS_PING_INTERVAL_MS = 15000
+export const WS_RECONNECT_MS = 3000
+export const WS_RECONNECT_MAX_MS = 30000
+/** How often to refresh `/api/status` (temps, CPU, show name, …). */
+export const STATUS_POLL_MS = 30000
+
+export const SYSTEM_MASTER = 'system.masterdimmer'
+export const SYSTEM_STOP = 'system.stop'
+export const SYSTEM_NOW_PLAYING = 'system.nowplaying'
 
 export const Colors = {
 	White: 0xffffff,
@@ -15,20 +23,14 @@ export const Colors = {
 	Effect: 0xa04000,
 	Master: 0xb9770e,
 	MasterOff: 0x2c2c2c,
-	Identify: 0x1a5276,
-	IdentifyOn: 0xf1c40f,
+	Switch: 0x1a5276,
+	SwitchOn: 0xf1c40f,
 	Status: 0x17202a,
-	Custom: 0x1c2833,
+	Device: 0x1c2833,
 } as const
 
-export const GlobalColorChannels = ['red', 'green', 'blue'] as const
-export type GlobalColorChannel = (typeof GlobalColorChannels)[number]
+export const EntityKinds = ['scene', 'switch', 'level', 'select', 'button', 'sensor'] as const
+export type EntityKind = (typeof EntityKinds)[number]
 
-export const FixtureChannels = ['dimmer', 'red', 'green', 'blue', 'white'] as const
-export type FixtureChannel = (typeof FixtureChannels)[number]
-
-export const IdentifyModes = ['on', 'off', 'toggle'] as const
-export type IdentifyMode = (typeof IdentifyModes)[number]
-
-export const CustomArgTypes = ['none', 'float', 'integer', 'string'] as const
-export type CustomArgType = (typeof CustomArgTypes)[number]
+export const SwitchCommands = ['turnOn', 'turnOff', 'toggle'] as const
+export type SwitchCommand = (typeof SwitchCommands)[number]

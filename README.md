@@ -1,8 +1,8 @@
 # companion-module-dmxcore-100
 
-Bitfocus Companion connection for the [DMX Core 100](https://dmxcore.com/dmx-core-100). It talks the device's built-in OSC addresses: play cues, apply presets, start effects, set levels, and subscribe to status feedback.
+Bitfocus Companion connection for the [DMX Core 100](https://dmxcore.com/dmx-core-100). It uses the device [Integration API](https://docs.dmxcore.com/dmx-core-100/integrations/integration-api/): catalog dropdowns, execute commands, and live WebSocket state for button feedback.
 
-Companion help text lives in [companion/HELP.md](./companion/HELP.md). OSC reference: [DMX Core OSC docs](https://docs.dmxcore.com/dmx-core-100/integrations/osc-open-sound-control/).
+Companion help text lives in [companion/HELP.md](./companion/HELP.md).
 
 ## Develop
 
@@ -37,7 +37,7 @@ That writes:
 | Output | Use |
 | --- | --- |
 | `pkg/` | Unpacked bundle. Companion loads this if you create an empty `DEBUG-PACKAGED` file in the module root. |
-| `dmxcore-100-<version>.tgz` | File to import. The version comes from `package.json` (currently `0.1.0`). |
+| `dmxcore-100-<version>.tgz` | File to import. The version comes from `package.json` (currently `0.2.4`). |
 
 `pkg/` and `*.tgz` are gitignored.
 
@@ -47,6 +47,7 @@ That writes:
 2. In the admin UI go to **Modules**.
 3. Choose **Import Module Package** and select `dmxcore-100-<version>.tgz`.
 4. Add a connection: **DMX Core: DMX Core 100**.
+5. Enable the Integration API on the device, paste an API key, and set host/port (see [companion/HELP.md](./companion/HELP.md)).
 
 To test a local packaged build without importing, create an empty `DEBUG-PACKAGED` file next to `package.json` so Companion reads `pkg/` instead of source. Remove that file when you go back to development, or Companion will keep serving the last package.
 
@@ -65,23 +66,26 @@ The **Package module** workflow (`.github/workflows/package.yaml`) runs the same
 3. Unpack the artifact zip if your browser saved it that way; inside is `dmxcore-100-<version>.tgz`.
 4. Import that `.tgz` in Companion as above.
 
-## Mock OSC device
+## Mock Integration API
 
-There is no DMX Core application within this repo. To exercise encode/send/feedback locally you can run a mock OSC device:
+There is no DMX Core application within this repo. To exercise catalog/execute/events locally:
 
 ```bash
-node scripts/mock-dmxcore.mjs
+yarn mock
 ```
 
-The mock listens on UDP 8000, understands the built-in `/dmxcore/...` addresses, and sends status back to 127.0.0.1:9000.
+The mock listens on `http://127.0.0.1:8080/api/integration/v1` with API key `test-key`, and accepts WebSocket clients on `/events`.
 
 ## Module layout
 
-| Path               | Role                                  |
-| ------------------ | ------------------------------------- |
-| `src/main.ts`      | Connection lifecycle, OSC send/listen |
-| `src/actions.ts`   | Playback, levels, device, custom OSC  |
-| `src/feedbacks.ts` | Boolean button feedback               |
-| `src/presets.ts`   | Drag-and-drop buttons                 |
-| `src/variables.ts` | Live status variables                 |
-| `src/osc.ts`       | OSC packet codec and address helpers  |
+| Path | Role |
+| --- | --- |
+| `src/main.ts` | Connection lifecycle, HTTP + WebSocket |
+| `src/api.ts` | Integration API HTTP client |
+| `src/events.ts` | WebSocket event stream |
+| `src/entities.ts` | Entity/state parsing and dropdown helpers |
+| `src/actions.ts` | Scene, switch, level, select execute |
+| `src/feedbacks.ts` | Boolean button feedback |
+| `src/presets.ts` | Drag-and-drop buttons |
+| `src/variables.ts` | Device + catalog variables |
+| `src/state.ts` | Catalog/state store |

@@ -1,7 +1,12 @@
-import type { CompanionPresetDefinitions, CompanionPresetSection } from '@companion-module/base'
+import type { CompanionPresetDefinitions, CompanionPresetSection, CompanionTextSize } from '@companion-module/base'
 import type { ModuleSchema } from './main.js'
 import type ModuleInstance from './main.js'
-import { Colors } from './constants.js'
+import { Colors, SYSTEM_MASTER, SYSTEM_STOP } from './constants.js'
+import type { IntegrationEntity } from './entities.js'
+import { entitiesOfKind } from './entities.js'
+
+/** Fixed size so labels stay readable without auto upsizing that mid-word wraps. */
+const PRESET_TEXT_SIZE: CompanionTextSize = '14'
 
 function buttonStyle(
 	text: string,
@@ -9,111 +14,77 @@ function buttonStyle(
 	color: number = Colors.White,
 ): {
 	text: string
-	size: 'auto'
+	size: CompanionTextSize
 	color: number
 	bgcolor: number
 	show_topbar: false
 } {
 	return {
 		text,
-		size: 'auto',
+		size: PRESET_TEXT_SIZE,
 		color,
 		bgcolor,
 		show_topbar: false,
 	}
 }
 
+function shortLabel(entity: IntegrationEntity, max = 22): string {
+	const name = entity.name.trim() || entity.code
+	if (name.length <= max) return name
+	return `${name.slice(0, max - 1)}…`
+}
+
+function presetId(prefix: string, code: string): string {
+	const safe = code
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '_')
+		.replace(/^_+|_+$/g, '')
+	return `${prefix}_${safe || 'entity'}`
+}
+
+function varRef(label: string, name: string): string {
+	return `$(${label}:${name})`
+}
+
 export function UpdatePresets(self: ModuleInstance): void {
+	const label = self.label || 'dmxcore'
+	const entities = [...self.state.entities.values()]
+	const scenes = entitiesOfKind(entities, 'scene')
+	const switches = entitiesOfKind(entities, 'switch')
+	const buttons = entitiesOfKind(entities, 'button')
+	const levels = entitiesOfKind(entities, 'level')
+
+	const stopCode = self.state.entities.has(SYSTEM_STOP) ? SYSTEM_STOP : 'system.stop'
+	const masterCode = self.state.entities.has(SYSTEM_MASTER) ? SYSTEM_MASTER : 'system.masterdimmer'
+
 	const presets: CompanionPresetDefinitions<ModuleSchema> = {
-		play_cue: {
+		now_playing: {
 			type: 'simple',
-			name: 'Play Cue',
-			keywords: ['cue', 'play', 'go'],
-			style: buttonStyle('Play Cue\nACT1', Colors.Play),
+			name: 'Now Playing',
+			keywords: ['status', 'sensor', 'now playing', 'stopped'],
+			style: buttonStyle(varRef(label, 'now_playing'), Colors.Stopped),
 			steps: [
 				{
-					down: [{ actionId: 'playCue', options: { code: 'ACT1', useLoop: false, loopCount: 1 } }],
+					down: [{ actionId: 'refreshCatalog', options: {} }],
 					up: [],
 				},
 			],
 			feedbacks: [
 				{
-					feedbackId: 'cuePlaying',
-					options: { code: 'ACT1' },
+					feedbackId: 'nowPlaying',
+					options: {},
 					style: { bgcolor: Colors.Playing, color: Colors.White },
 				},
 			],
 		},
-		stop_playback: {
+		stop_button: {
 			type: 'simple',
-			name: 'Stop Playback',
-			keywords: ['stop', 'cue'],
+			name: 'Stop',
+			keywords: ['stop', 'button'],
 			style: buttonStyle('Stop', Colors.Stop),
 			steps: [
 				{
-					down: [{ actionId: 'stopPlayback', options: {} }],
-					up: [],
-				},
-			],
-			feedbacks: [
-				{
-					feedbackId: 'playbackStopped',
-					options: {},
-					style: { bgcolor: Colors.Stopped, color: Colors.White },
-				},
-			],
-		},
-		status: {
-			type: 'simple',
-			name: 'Playback Status',
-			keywords: ['status', 'cue'],
-			style: buttonStyle('$(status_text)\n$(playing_cue)', Colors.Status),
-			steps: [
-				{
-					down: [{ actionId: 'requestStatus', options: {} }],
-					up: [],
-				},
-			],
-			feedbacks: [
-				{
-					feedbackId: 'cuePlaying',
-					options: { code: '' },
-					style: { bgcolor: Colors.Playing, color: Colors.White },
-				},
-			],
-		},
-		apply_preset: {
-			type: 'simple',
-			name: 'Apply Preset',
-			keywords: ['preset', 'look', 'scene'],
-			style: buttonStyle('Preset\nP1', Colors.Preset),
-			steps: [
-				{
-					down: [{ actionId: 'applyPreset', options: { code: 'P1', useFade: false, fadeMs: 1000 } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		start_effect: {
-			type: 'simple',
-			name: 'Start Effect',
-			style: buttonStyle('Effect', Colors.Effect),
-			steps: [
-				{
-					down: [{ actionId: 'startEffect', options: { code: '' } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		clear_effect: {
-			type: 'simple',
-			name: 'Clear Effect',
-			style: buttonStyle('FX Off', Colors.Effect),
-			steps: [
-				{
-					down: [{ actionId: 'clearEffect', options: {} }],
+					down: [{ actionId: 'activateButton', options: { code: stopCode } }],
 					up: [],
 				},
 			],
@@ -125,29 +96,17 @@ export function UpdatePresets(self: ModuleInstance): void {
 			style: buttonStyle('Master\n0%', Colors.MasterOff),
 			steps: [
 				{
-					down: [{ actionId: 'setMaster', options: { percent: 0 } }],
+					down: [{ actionId: 'setLevel', options: { code: masterCode, percent: 0 } }],
 					up: [],
 				},
 			],
 			feedbacks: [
 				{
-					feedbackId: 'masterAtMost',
-					options: { percent: 0 },
+					feedbackId: 'levelAtMost',
+					options: { code: masterCode, percent: 0 },
 					style: { bgcolor: Colors.Master, color: Colors.Black },
 				},
 			],
-		},
-		master_25: {
-			type: 'simple',
-			name: 'Master 25%',
-			style: buttonStyle('Master\n25%', Colors.Master),
-			steps: [
-				{
-					down: [{ actionId: 'setMaster', options: { percent: 25 } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
 		},
 		master_50: {
 			type: 'simple',
@@ -155,19 +114,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			style: buttonStyle('Master\n50%', Colors.Master),
 			steps: [
 				{
-					down: [{ actionId: 'setMaster', options: { percent: 50 } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		master_75: {
-			type: 'simple',
-			name: 'Master 75%',
-			style: buttonStyle('Master\n75%', Colors.Master),
-			steps: [
-				{
-					down: [{ actionId: 'setMaster', options: { percent: 75 } }],
+					down: [{ actionId: 'setLevel', options: { code: masterCode, percent: 50 } }],
 					up: [],
 				},
 			],
@@ -179,14 +126,14 @@ export function UpdatePresets(self: ModuleInstance): void {
 			style: buttonStyle('Master\n100%', Colors.Master),
 			steps: [
 				{
-					down: [{ actionId: 'setMaster', options: { percent: 100 } }],
+					down: [{ actionId: 'setLevel', options: { code: masterCode, percent: 100 } }],
 					up: [],
 				},
 			],
 			feedbacks: [
 				{
-					feedbackId: 'masterAtLeast',
-					options: { percent: 100 },
+					feedbackId: 'levelAtLeast',
+					options: { code: masterCode, percent: 100 },
 					style: { bgcolor: Colors.Playing, color: Colors.White },
 				},
 			],
@@ -195,235 +142,213 @@ export function UpdatePresets(self: ModuleInstance): void {
 			type: 'simple',
 			name: 'Master Encoder',
 			keywords: ['master', 'encoder', 'rotary'],
-			style: buttonStyle('Master\n$(master_percent)%', Colors.Master, Colors.Black),
+			style: buttonStyle(`Master\n${varRef(label, 'master_percent')}%`, Colors.Master, Colors.Black),
 			options: { stepAutoProgress: false },
 			steps: [
 				{
-					down: [{ actionId: 'requestStatus', options: {} }],
+					down: [{ actionId: 'refreshCatalog', options: {} }],
 					up: [],
-					rotate_left: [{ actionId: 'bumpMaster', options: { deltaPercent: -5 } }],
-					rotate_right: [{ actionId: 'bumpMaster', options: { deltaPercent: 5 } }],
+					rotate_left: [{ actionId: 'bumpLevel', options: { code: masterCode, deltaPercent: -5 } }],
+					rotate_right: [{ actionId: 'bumpLevel', options: { code: masterCode, deltaPercent: 5 } }],
 				},
 			],
 			feedbacks: [],
 		},
-		fade_out: {
+		refresh: {
 			type: 'simple',
-			name: 'Fade Master Out',
-			style: buttonStyle('Fade Out\n2s', Colors.Stop),
+			name: 'Refresh Catalog',
+			style: buttonStyle('Refresh', Colors.Device),
 			steps: [
 				{
-					down: [{ actionId: 'fadeMaster', options: { percent: 0, fadeMs: 2000 } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		fade_in: {
-			type: 'simple',
-			name: 'Fade Master In',
-			style: buttonStyle('Fade In\n2s', Colors.Play),
-			steps: [
-				{
-					down: [{ actionId: 'fadeMaster', options: { percent: 100, fadeMs: 2000 } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		color_red: {
-			type: 'simple',
-			name: 'Global Red',
-			style: buttonStyle('Red', 0xaa2222),
-			steps: [
-				{
-					down: [{ actionId: 'setGlobalColor', options: { channel: 'red', percent: 100 } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		color_green: {
-			type: 'simple',
-			name: 'Global Green',
-			style: buttonStyle('Green', 0x1e8449),
-			steps: [
-				{
-					down: [{ actionId: 'setGlobalColor', options: { channel: 'green', percent: 100 } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		color_blue: {
-			type: 'simple',
-			name: 'Global Blue',
-			style: buttonStyle('Blue', 0x1a5276),
-			steps: [
-				{
-					down: [{ actionId: 'setGlobalColor', options: { channel: 'blue', percent: 100 } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		identify_toggle: {
-			type: 'simple',
-			name: 'Identify Toggle',
-			style: buttonStyle('Identify', Colors.Identify),
-			steps: [
-				{
-					down: [{ actionId: 'identify', options: { mode: 'toggle' } }],
+					down: [{ actionId: 'refreshCatalog', options: {} }],
 					up: [],
 				},
 			],
 			feedbacks: [
 				{
-					feedbackId: 'identifyOn',
+					feedbackId: 'connectionOk',
 					options: {},
-					style: { bgcolor: Colors.IdentifyOn, color: Colors.Black },
+					style: { bgcolor: Colors.Playing, color: Colors.White },
 				},
 			],
 		},
-		identify_on: {
+	}
+
+	const scenePresetIds: string[] = []
+	for (const scene of scenes) {
+		const id = presetId('scene', scene.code)
+		scenePresetIds.push(id)
+		presets[id] = {
 			type: 'simple',
-			name: 'Identify On',
-			style: buttonStyle('ID On', Colors.Identify),
-			steps: [
-				{
-					down: [{ actionId: 'identify', options: { mode: 'on' } }],
-					up: [],
-				},
-			],
-			feedbacks: [
-				{
-					feedbackId: 'identifyOn',
-					options: {},
-					style: { bgcolor: Colors.IdentifyOn, color: Colors.Black },
-				},
-			],
-		},
-		identify_off: {
-			type: 'simple',
-			name: 'Identify Off',
-			style: buttonStyle('ID Off', Colors.Identify),
-			steps: [
-				{
-					down: [{ actionId: 'identify', options: { mode: 'off' } }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		request_status: {
-			type: 'simple',
-			name: 'Request Status',
-			style: buttonStyle('Refresh\nStatus', Colors.Status),
-			steps: [
-				{
-					down: [{ actionId: 'requestStatus', options: {} }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		ping: {
-			type: 'simple',
-			name: 'Send Ping',
-			style: buttonStyle('Ping', Colors.Custom),
-			steps: [
-				{
-					down: [{ actionId: 'ping', options: {} }],
-					up: [],
-				},
-			],
-			feedbacks: [],
-		},
-		custom_osc: {
-			type: 'simple',
-			name: 'Custom OSC',
-			style: buttonStyle('Custom\nOSC', Colors.Custom),
+			name: `Play ${scene.name}`,
+			keywords: ['scene', 'cue', 'play', scene.code],
+			style: buttonStyle(shortLabel(scene), Colors.Play),
 			steps: [
 				{
 					down: [
 						{
-							actionId: 'sendCustom',
-							options: {
-								path: '/dmxcore/',
-								argType: 'none',
-								floatValue: 1,
-								intValue: 1,
-								stringValue: '',
-							},
+							actionId: 'activateScene',
+							options: { code: scene.code, overrideLoop: true, loopCount: 0 },
+						},
+					],
+					up: [],
+				},
+			],
+			feedbacks: [
+				{
+					feedbackId: 'sensorContains',
+					options: { code: 'system.nowplaying', text: scene.code.replace(/^(cue|timeline|sound)\./i, '') },
+					style: { bgcolor: Colors.Playing, color: Colors.White },
+				},
+			],
+		}
+	}
+
+	if (scenePresetIds.length === 0) {
+		presets.activate_scene = {
+			type: 'simple',
+			name: 'Activate Scene',
+			keywords: ['scene', 'cue', 'play'],
+			style: buttonStyle('Scene', Colors.Play),
+			steps: [
+				{
+					down: [
+						{
+							actionId: 'activateScene',
+							options: { code: 'cue.INTRO', overrideLoop: true, loopCount: 0 },
 						},
 					],
 					up: [],
 				},
 			],
 			feedbacks: [],
-		},
+		}
+		scenePresetIds.push('activate_scene')
+	}
+
+	const switchPresetIds: string[] = []
+	for (const sw of switches) {
+		const id = presetId('switch', sw.code)
+		switchPresetIds.push(id)
+		presets[id] = {
+			type: 'simple',
+			name: `Toggle ${sw.name}`,
+			keywords: ['switch', 'toggle', sw.code],
+			style: buttonStyle(shortLabel(sw), Colors.Preset),
+			steps: [
+				{
+					down: [{ actionId: 'switchEntity', options: { code: sw.code, command: 'toggle' } }],
+					up: [],
+				},
+			],
+			feedbacks: [
+				{
+					feedbackId: 'switchOn',
+					options: { code: sw.code },
+					style: { bgcolor: Colors.SwitchOn, color: Colors.Black },
+				},
+			],
+		}
+	}
+
+	const buttonPresetIds: string[] = []
+	for (const button of buttons) {
+		if (button.code === stopCode) continue
+		const id = presetId('button', button.code)
+		buttonPresetIds.push(id)
+		presets[id] = {
+			type: 'simple',
+			name: button.name,
+			keywords: ['button', button.code],
+			style: buttonStyle(shortLabel(button), Colors.Device),
+			steps: [
+				{
+					down: [{ actionId: 'activateButton', options: { code: button.code } }],
+					up: [],
+				},
+			],
+			feedbacks: [],
+		}
+	}
+
+	const levelPresetIds: string[] = []
+	for (const level of levels) {
+		if (level.code === masterCode) continue
+		const id = presetId('level', level.code)
+		levelPresetIds.push(id)
+		presets[id] = {
+			type: 'simple',
+			name: `${level.name} 100%`,
+			keywords: ['level', level.code],
+			style: buttonStyle(`${shortLabel(level)}\n100%`, Colors.Master),
+			steps: [
+				{
+					down: [{ actionId: 'setLevel', options: { code: level.code, percent: 100 } }],
+					up: [],
+				},
+			],
+			feedbacks: [
+				{
+					feedbackId: 'levelAtLeast',
+					options: { code: level.code, percent: 100 },
+					style: { bgcolor: Colors.Playing, color: Colors.White },
+				},
+			],
+		}
 	}
 
 	const structure: CompanionPresetSection<ModuleSchema>[] = [
 		{
 			id: 'playback',
 			name: 'Playback',
-			description: 'Fire saved cues and show what is running.',
-			definitions: [
-				{ id: 'go', type: 'simple', name: 'Go / Stop', presets: ['play_cue', 'stop_playback'] },
-				{ id: 'status', type: 'simple', name: 'Status', presets: ['status'] },
-			],
-		},
-		{
-			id: 'looks',
-			name: 'Looks',
-			definitions: [
-				{ id: 'presets', type: 'simple', name: 'Presets', presets: ['apply_preset'] },
-				{ id: 'effects', type: 'simple', name: 'Effects', presets: ['start_effect', 'clear_effect'] },
-			],
-		},
-		{
-			id: 'master',
-			name: 'Master Dimmer',
-			definitions: [
-				{
-					id: 'levels',
-					type: 'simple',
-					name: 'Levels',
-					presets: ['master_0', 'master_25', 'master_50', 'master_75', 'master_100'],
-				},
-				{
-					id: 'fades',
-					type: 'simple',
-					name: 'Fades & encoder',
-					presets: ['fade_out', 'fade_in', 'master_encoder'],
-				},
-			],
-		},
-		{
-			id: 'color',
-			name: 'Global Color',
-			definitions: ['color_red', 'color_green', 'color_blue'],
-		},
-		{
-			id: 'device',
-			name: 'Device',
-			definitions: [
-				{
-					id: 'identify',
-					type: 'simple',
-					name: 'Identify',
-					presets: ['identify_toggle', 'identify_on', 'identify_off'],
-				},
-				{
-					id: 'network',
-					type: 'simple',
-					name: 'Network',
-					presets: ['request_status', 'ping', 'custom_osc'],
-				},
-			],
+			description: 'Scenes from the live catalog (loop forever by default).',
+			definitions: [{ id: 'scenes', type: 'simple', name: 'Scenes', presets: scenePresetIds }],
 		},
 	]
+
+	if (switchPresetIds.length > 0 || buttonPresetIds.length > 0) {
+		structure.push({
+			id: 'looks',
+			name: 'Looks & buttons',
+			definitions: [
+				...(switchPresetIds.length
+					? [{ id: 'switches', type: 'simple' as const, name: 'Switches', presets: switchPresetIds }]
+					: []),
+				...(buttonPresetIds.length
+					? [{ id: 'buttons', type: 'simple' as const, name: 'Buttons', presets: buttonPresetIds }]
+					: []),
+			],
+		})
+	}
+
+	structure.push({
+		id: 'master',
+		name: 'Levels',
+		definitions: [
+			{
+				id: 'master',
+				type: 'simple',
+				name: 'Master dimmer',
+				presets: ['master_0', 'master_50', 'master_100', 'master_encoder'],
+			},
+			...(levelPresetIds.length
+				? [{ id: 'other_levels', type: 'simple' as const, name: 'Other levels', presets: levelPresetIds }]
+				: []),
+		],
+	})
+
+	structure.push({
+		id: 'device',
+		name: 'Device',
+		definitions: [
+			{
+				id: 'status',
+				type: 'simple',
+				name: 'Status',
+				presets: ['now_playing', 'stop_button', 'refresh'],
+			},
+		],
+	})
 
 	self.setPresetDefinitions(structure, presets)
 }
