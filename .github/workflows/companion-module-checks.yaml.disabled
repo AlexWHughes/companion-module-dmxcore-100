@@ -1,3 +1,8 @@
+# Disabled while this repository is private.
+# bitfocus/actions module-checks cannot check out private repos ("Repository not found").
+# Re-enable by renaming to companion-module-checks.yaml when the repo is public again.
+# Local CI coverage: node.yaml + package.yaml
+
 name: Companion Module Checks
 
 on:
