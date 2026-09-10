@@ -86,13 +86,31 @@ export function isNowPlaying(state: DmxCoreState): boolean {
 	return sensorText(state, SYSTEM_NOW_PLAYING).trim().length > 0
 }
 
+/** Status-line type marker for a catalog code prefix (`Cue:`, `Sound:`, `Playing timeline:`). */
+function playbackTypeMarker(code: string): string | null {
+	const prefix = code.split('.')[0]?.toLowerCase() ?? ''
+	switch (prefix) {
+		case 'cue':
+			return 'cue:'
+		case 'sound':
+			return 'sound:'
+		case 'timeline':
+			return 'playing timeline:'
+		default:
+			return null
+	}
+}
+
 /**
  * Now-playing `text` is a status line (e.g. `Cue: INTRO`), never a namespaced code.
- * Match the entity's catalog name and/or code suffix case-insensitively.
+ * Require the playback type from the code prefix, then match catalog name and/or code suffix.
  */
 export function nowPlayingMatchesEntity(state: DmxCoreState, code: string): boolean {
 	const text = sensorText(state, SYSTEM_NOW_PLAYING).trim().toLowerCase()
 	if (!text || !code) return false
+
+	const marker = playbackTypeMarker(code)
+	if (marker && !text.includes(marker)) return false
 
 	const entity = state.entities.get(code)
 	const suffix = code.replace(/^(cue|timeline|sound)\./i, '').toLowerCase()
