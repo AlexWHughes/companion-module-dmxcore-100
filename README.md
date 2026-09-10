@@ -14,7 +14,7 @@ Requires **Companion 5.0 or later**.
 
 ## Install (import the module)
 
-Companion loads this module from a packaged `.tgz` file (for example `dmxcore-100-0.2.9.tgz`).
+Companion loads this module from a packaged `.tgz` file (for example `dmxcore-100-0.2.11.tgz`).
 
 1. Open Companion and go to **Modules**.
 2. Choose **Import Module Package**.
@@ -40,7 +40,7 @@ Companion loads this module from a packaged `.tgz` file (for example `dmxcore-10
    - **HTTP(S) port** — hardware is often **80** / **443**; desktop software is often **8000** / **8001** (same as the Web UI)
    - The **API key**
 6. Enable **Use HTTPS** only if you reach the device over TLS. Tick **Allow insecure TLS** for self-signed certificates.
-7. Save. When the connection is online, Companion loads the live catalog and status from the device.
+7. Save. Companion loads `/info` (identity + health), `/catalog`, and `/state`, then opens `/events` for live updates. Health fields from `/info` refresh about every 30s.
 
 Treat API keys like passwords and keep the device on a trusted network.
 
@@ -55,13 +55,15 @@ After the connection is online, open the **Presets** tab and drag buttons onto y
 | Section | Useful for |
 | --- | --- |
 | **Playback** | Scenes and Timelines in separate groups (Sounds too, when present) |
-| **Looks & buttons → Control** | Switch toggles and **Stop Playback** |
+| **Looks & buttons → Control** | Switch toggles (presets, mute, blackout, …) and **Stop Playback** |
 | **Levels → Rotary** | **Master Dimmer** and **Audio Volume** encoders |
 | **Device → Status** | Now Playing and refresh |
 
-You can also build custom buttons with actions such as Activate scene, System actions, Switch entity, Set / bump level, and Set choice.
+You can also build custom buttons with actions such as Activate scene (optional loop / fades for cues and sounds), System actions (buttons like Stop), Switch entity, Set / bump level, and Set choice.
 
-Live variables include now playing, master level, show name, device nickname, temperatures, and more — for example `$(dmxcore:now_playing)`.
+Live variables include now playing, master / audio levels, show name, device name, temperatures, and more — for example `$(dmxcore:now_playing)` or `$(dmxcore:show_name)`. Scene buttons light from the now-playing status line (`Cue: INTRO`, not `cue.INTRO`).
+
+Playback **position** and **countdown to end** are not in the Integration API yet — only the now-playing label and `/info` player snapshot.
 
 ---
 
@@ -70,6 +72,7 @@ Live variables include now playing, master level, show name, device nickname, te
 - Device docs: [Integration API](https://docs.dmxcore.com/dmx-core-100/integrations/integration-api/)
 - In-Companion help: [companion/HELP.md](./companion/HELP.md)
 - Product page: [dmxcore.com/dmx-core-100](https://dmxcore.com/dmx-core-100)
+- Module issues: [GitHub Issues](https://github.com/AlexWHughes/companion-module-dmxcore-100/issues)
 
 ---
 
