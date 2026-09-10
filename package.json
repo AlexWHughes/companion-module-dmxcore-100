@@ -1,6 +1,6 @@
 {
 	"name": "companion-module-dmxcore-100",
-	"version": "0.2.11",
+	"version": "1.0.0",
 	"main": "dist/main.js",
 	"type": "module",
 	"scripts": {
