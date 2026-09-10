@@ -173,6 +173,23 @@ void test('applies catalog and state into variables', () => {
 	assert.equal(variableValuesFromState(state).now_playing, 'Stopped')
 })
 
+void test('now-playing match keeps cue and sound codes distinct', () => {
+	const state = createInitialState()
+	replaceCatalog(state, [
+		{ code: 'cue.INTRO', name: 'Intro', kind: 'scene' },
+		{ code: 'sound.INTRO', name: 'Intro', kind: 'scene' },
+		{ code: 'system.nowplaying', name: 'Now Playing', kind: 'sensor' },
+	])
+
+	applyStates(state, [{ code: 'system.nowplaying', text: 'Cue: INTRO' }], true)
+	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO'), true)
+	assert.equal(nowPlayingMatchesEntity(state, 'sound.INTRO'), false)
+
+	applyStates(state, [{ code: 'system.nowplaying', text: 'Sound: INTRO' }], true)
+	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO'), false)
+	assert.equal(nowPlayingMatchesEntity(state, 'sound.INTRO'), true)
+})
+
 void test('treats missing switch state as unknown, not off', () => {
 	const state = createInitialState()
 	replaceCatalog(state, [
