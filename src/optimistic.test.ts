@@ -3,6 +3,8 @@ import { test } from 'node:test'
 import {
 	confirmOptimisticSetLevel,
 	confirmOptimisticSetLevels,
+	confirmOptimisticSetLevelsFromStates,
+	ReconcileGate,
 	takeAllOptimisticRollbacks,
 	takeOptimisticRollback,
 	trackOptimisticSetLevel,
@@ -96,4 +98,92 @@ void test('lost commands roll back all pending levels then allow reconciliation'
 	confirmOptimisticSetLevels(pending, ['system.masterdimmer'])
 	assert.equal(takeOptimisticRollback(pending, 'system.masterdimmer'), undefined)
 	assert.equal(getLevel(state, 'system.masterdimmer'), 0.55)
+})
+
+void test('level-free partial state does not confirm an optimistic setLevel', () => {
+	const state = createInitialState()
+	applyStates(state, [{ code: 'system.masterdimmer', level: 0.4, isOn: true }], true)
+
+	const pending: PendingOptimisticLevels = new Map()
+	trackOptimisticSetLevel(pending, 'system.masterdimmer', getLevel(state, 'system.masterdimmer'))
+	applyStates(state, [{ code: 'system.masterdimmer', level: 0.9 }], false)
+
+	confirmOptimisticSetLevelsFromStates(pending, [{ code: 'system.masterdimmer', isOn: false }])
+	assert.equal(pending.has('system.masterdimmer'), true)
+	assert.equal(getLevel(state, 'system.masterdimmer'), 0.9)
+
+	confirmOptimisticSetLevelsFromStates(pending, [{ code: 'system.masterdimmer', level: 0.9 }])
+	assert.equal(takeOptimisticRollback(pending, 'system.masterdimmer'), undefined)
+})
+
+void test('level-free partial leaves rollback so a later rejection restores the prior level', () => {
+	const state = createInitialState()
+	applyStates(state, [{ code: 'system.masterdimmer', level: 0.4 }], true)
+
+	const pending: PendingOptimisticLevels = new Map()
+	trackOptimisticSetLevel(pending, 'system.masterdimmer', getLevel(state, 'system.masterdimmer'))
+	applyStates(state, [{ code: 'system.masterdimmer', level: 0.9 }], false)
+
+	confirmOptimisticSetLevelsFromStates(pending, [{ code: 'system.masterdimmer', text: 'busy' }])
+	const rollback = takeOptimisticRollback(pending, 'system.masterdimmer')
+	assert.equal(rollback, 0.4)
+	if (typeof rollback === 'number') {
+		applyStates(state, [{ code: 'system.masterdimmer', level: rollback }], false)
+	}
+	assert.equal(getLevel(state, 'system.masterdimmer'), 0.4)
+})
+
+void test('overlapping reconciles keep execute waiting for the newer snapshot', async () => {
+	const gate = new ReconcileGate()
+	const applied: number[] = []
+	const releases: Array<() => void> = []
+	const started: Array<() => void> = []
+
+	const run = async (id: number): Promise<void> =>
+		gate.run(async (isCurrent) => {
+			started[id - 1]?.()
+			await new Promise<void>((resolve) => {
+				releases[id - 1] = resolve
+			})
+			if (isCurrent()) applied.push(id)
+		})
+
+	let run1Started = false
+	let run2Started = false
+	const wait1 = new Promise<void>((resolve) => {
+		started[0] = () => {
+			run1Started = true
+			resolve()
+		}
+	})
+	const wait2 = new Promise<void>((resolve) => {
+		started[1] = () => {
+			run2Started = true
+			resolve()
+		}
+	})
+
+	const first = run(1)
+	await wait1
+	const second = run(2)
+	await wait2
+
+	const execute = gate.wait()
+	let executeDone = false
+	void execute.then(() => {
+		executeDone = true
+	})
+
+	releases[0]?.()
+	await first
+	await Promise.resolve()
+	assert.equal(run1Started, true)
+	assert.equal(run2Started, true)
+	assert.deepEqual(applied, [])
+	assert.equal(executeDone, false)
+
+	releases[1]?.()
+	await Promise.all([second, execute])
+	assert.deepEqual(applied, [2])
+	assert.equal(executeDone, true)
 })

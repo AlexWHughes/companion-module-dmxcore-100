@@ -1,3 +1,5 @@
+import type { EntityState } from './entities.js'
+
 /** Prior level before the first unconfirmed optimistic setLevel for an entity code. */
 export type PendingOptimisticLevels = Map<string, number | null>
 
@@ -21,6 +23,49 @@ export function confirmOptimisticSetLevel(pending: PendingOptimisticLevels, code
 
 export function confirmOptimisticSetLevels(pending: PendingOptimisticLevels, codes: Iterable<string>): void {
 	for (const code of codes) pending.delete(code)
+}
+
+/** Confirm only entries that include a numeric level so level-free partials keep rollback state. */
+export function confirmOptimisticSetLevelsFromStates(
+	pending: PendingOptimisticLevels,
+	states: Iterable<EntityState>,
+): void {
+	for (const entry of states) {
+		if (typeof entry.level === 'number') pending.delete(entry.code)
+	}
+}
+
+/**
+ * Tracks an in-flight device reconcile so execute() can wait for the newest snapshot.
+ * A newer run replaces the current promise; completing older runs do not clear it.
+ */
+export class ReconcileGate {
+	#current: Promise<void> | null = null
+	#seq = 0
+
+	invalidate(): void {
+		this.#seq++
+		this.#current = null
+	}
+
+	async run(task: (isCurrent: () => boolean) => Promise<void>): Promise<void> {
+		const seq = ++this.#seq
+		const work = (async () => {
+			try {
+				await task(() => seq === this.#seq)
+			} finally {
+				if (this.#seq === seq) this.#current = null
+			}
+		})()
+		this.#current = work
+		await work
+	}
+
+	async wait(): Promise<void> {
+		while (this.#current) {
+			await this.#current
+		}
+	}
 }
 
 /**

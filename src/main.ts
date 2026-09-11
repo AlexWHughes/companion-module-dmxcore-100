@@ -19,7 +19,8 @@ import {
 	variableValuesFromState,
 } from './state.js'
 import {
-	confirmOptimisticSetLevels,
+	confirmOptimisticSetLevelsFromStates,
+	ReconcileGate,
 	takeAllOptimisticRollbacks,
 	takeOptimisticRollback,
 	trackOptimisticSetLevel,
@@ -46,7 +47,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#connectGeneration = 0
 	#statusPollTimer: ReturnType<typeof setInterval> | undefined
 	readonly #pendingOptimisticLevels: PendingOptimisticLevels = new Map()
-	#reconcilePromise: Promise<void> | null = null
+	readonly #reconcile = new ReconcileGate()
 
 	constructor(internal: unknown) {
 		super(internal)
@@ -76,17 +77,19 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	async execute(request: ExecuteRequest, options?: { preferWs?: boolean }): Promise<boolean> {
-		if (!this.#api) {
+		const api = this.#api
+		const events = this.#events
+		const generation = this.#connectGeneration
+		if (!api) {
 			this.log('warn', `Cannot execute ${request.command} on ${request.code}: not connected`)
 			return false
 		}
 
-		if (this.#reconcilePromise) {
-			await this.#reconcilePromise
-		}
+		await this.#reconcile.wait()
+		if (generation !== this.#connectGeneration || api !== this.#api) return false
 
 		try {
-			if (options?.preferWs && this.#events?.sendExecute(request)) {
+			if (options?.preferWs && events?.sendExecute(request)) {
 				// WS execute is fire-and-forget (error frames only). Treat a queued frame as accepted
 				// and apply setLevel locally so rotary ticks can accumulate before the device echo.
 				this.log('debug', `WS execute ${request.command} ${request.code}`)
@@ -94,7 +97,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				return true
 			}
 
-			await this.#api.execute(request)
+			await api.execute(request)
 			this.log('debug', `HTTP execute ${request.command} ${request.code}`)
 			// HTTP already accepted the command; refresh UI without tracking a rollback.
 			this.#applyOptimisticExecute(request, false)
@@ -239,8 +242,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.state.connected = false
 		this.state.info = null
 		this.state.status = null
-		this.#pendingOptimisticLevels.clear()
-		this.#reconcilePromise = null
+		this.#restoreOptimisticRollbacks(takeAllOptimisticRollbacks(this.#pendingOptimisticLevels))
+		this.#reconcile.invalidate()
 	}
 
 	#startStatusPoll(): void {
@@ -288,10 +291,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		if (full) {
 			this.#pendingOptimisticLevels.clear()
 		} else {
-			confirmOptimisticSetLevels(
-				this.#pendingOptimisticLevels,
-				states.map((entry) => entry.code),
-			)
+			confirmOptimisticSetLevelsFromStates(this.#pendingOptimisticLevels, states)
 		}
 		applyStates(this.state, states, full)
 		this.#publishState()
@@ -330,28 +330,21 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	async #reconcileFromDevice(): Promise<void> {
-		if (!this.#api) return
-		if (this.#reconcilePromise) {
-			await this.#reconcilePromise
-			return
-		}
+		const api = this.#api
+		if (!api) return
 
 		const generation = this.#connectGeneration
-		this.#reconcilePromise = (async () => {
+		await this.#reconcile.run(async (isCurrent) => {
 			try {
-				const states = await this.#api!.getState()
-				if (generation !== this.#connectGeneration) return
+				const states = await api.getState()
+				if (generation !== this.#connectGeneration || !isCurrent()) return
 				this.#pendingOptimisticLevels.clear()
 				this.#onState(states, true)
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				this.log('debug', `Unable to reconcile levels from device state: ${message}`)
 			}
-		})().finally(() => {
-			this.#reconcilePromise = null
 		})
-
-		await this.#reconcilePromise
 	}
 
 	#publishState(): void {
