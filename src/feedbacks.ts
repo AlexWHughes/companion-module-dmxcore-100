@@ -84,7 +84,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 		nowPlayingMatches: {
 			name: 'Now playing matches scene',
 			description:
-				'True when system.nowplaying text contains the scene’s catalog name or code suffix (e.g. Cue: INTRO).',
+				'True when system.nowplaying text matches the scene’s catalog name or code suffix as a whole token (e.g. Cue: INTRO, not Cue: INTRO2).',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: Colors.Playing,

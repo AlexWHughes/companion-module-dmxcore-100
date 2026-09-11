@@ -221,6 +221,21 @@ export function choiceDropdown(choices: string[] | undefined): DropdownChoice<st
 	return choices.map((choice) => ({ id: choice, label: choice }))
 }
 
+/** Unique choice strings from every select, in catalog order. */
+export function allSelectChoices(entities: Iterable<IntegrationEntity>): string[] {
+	const seen = new Set<string>()
+	const choices: string[] = []
+	for (const entity of entities) {
+		if (entity.kind !== 'select' || !entity.choices) continue
+		for (const choice of entity.choices) {
+			if (seen.has(choice)) continue
+			seen.add(choice)
+			choices.push(choice)
+		}
+	}
+	return choices
+}
+
 export function entityVariableId(kind: EntityKind, code: string): string {
 	const safe = code
 		.toLowerCase()

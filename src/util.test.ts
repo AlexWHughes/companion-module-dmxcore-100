@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatPercent, formatPercentUnit, percentToLevel } from './util.js'
+import { containsAlphanumericToken, formatPercent, formatPercentUnit, percentToLevel } from './util.js'
 
 void test('converts percent to a 0-1 level', () => {
 	assert.equal(percentToLevel(0), 0)
@@ -17,4 +17,13 @@ void test('formats levels as compact percents', () => {
 	assert.equal(formatPercentUnit(null), '')
 	assert.equal(formatPercentUnit(0.5), '50%')
 	assert.equal(formatPercentUnit(0), '0%')
+})
+
+void test('matches alphanumeric tokens without overlapping prefixes', () => {
+	assert.equal(containsAlphanumericToken('intro', 'intro'), true)
+	assert.equal(containsAlphanumericToken('intro (loop)', 'intro'), true)
+	assert.equal(containsAlphanumericToken('intro2', 'intro'), false)
+	assert.equal(containsAlphanumericToken('intro2', 'intro2'), true)
+	assert.equal(containsAlphanumericToken('', 'intro'), false)
+	assert.equal(containsAlphanumericToken('intro', ''), false)
 })

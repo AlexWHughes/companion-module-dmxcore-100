@@ -73,14 +73,16 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 		try {
 			if (options?.preferWs && this.#events?.sendExecute(request)) {
-				// WS execute is fire-and-forget; the device does not ACK success (only error frames).
-				// Return false so callers wait for state events before treating it as confirmed.
+				// WS execute is fire-and-forget (error frames only). Treat a queued frame as accepted
+				// and apply setLevel locally so rotary ticks can accumulate before the device echo.
 				this.log('debug', `WS execute ${request.command} ${request.code}`)
-				return false
+				this.#applyOptimisticExecute(request)
+				return true
 			}
 
 			await this.#api.execute(request)
 			this.log('debug', `HTTP execute ${request.command} ${request.code}`)
+			this.#applyOptimisticExecute(request)
 			return true
 		} catch (error) {
 			this.#handleApiError('execute', error)
@@ -92,6 +94,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	applyLocalLevel(code: string, level: number): void {
 		applyStates(this.state, [{ code, level }], false)
 		this.#publishState()
+	}
+
+	#applyOptimisticExecute(request: ExecuteRequest): void {
+		if (request.command !== 'setLevel' || typeof request.level !== 'number') return
+		this.applyLocalLevel(request.code, request.level)
 	}
 
 	async refreshCatalog(): Promise<void> {

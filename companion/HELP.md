@@ -48,8 +48,8 @@ The Now Playing preset shows the live status line (green while playing) or **Sto
 | System actions | `execute` → `activate` on a system **button** (Stop, Clear Ambient, …). Blackout / Mute / Output mute are **switches** |
 | Switch entity | `turnOn` / `turnOff` / `toggle` on a `switch` entity (presets, ambient, mute, blackout, …) |
 | Set level | `setLevel` with `level` 0–1 (Companion UI is 0–100%) |
-| Bump level | Reads current state, then `setLevel` (prefer WebSocket for encoders) |
-| Set choice | `setChoice` on a `select` entity (type a custom choice if the dropdown is for a different select) |
+| Bump level | Reads current state, then `setLevel` (prefer WebSocket for encoders; local level updates immediately so rapid rotary ticks accumulate) |
+| Set choice | `setChoice` on a `select` entity (Choice list is the union of every select’s catalog choices; type a custom value if needed) |
 | Refresh catalog | HTTP `GET /catalog` + `GET /state` + `/info` health snapshot |
 
 **Loop / fades:** On `activate` for `cue.*` or `sound.*`, optional `loop` (`0` = forever, `1` = once, `N` = N times), `fadeInMs`, and `fadeOutMs` are applied. Leave them at **-1** in Companion to use **Settings → Playback** defaults (same as a touchscreen tap). Timelines ignore these fields; sending them on other kinds returns **400**.
@@ -68,4 +68,4 @@ Catalog entities also create variables such as `level_system_masterdimmer`, `swi
 
 ## Feedbacks
 
-Use these to light buttons when the connection is up, something is playing, a specific scene matches the now-playing status line, a switch is on/off (off only when the device reported off), a level crosses a threshold, a select matches a choice (case-insensitive), or a sensor text contains a string.
+Use these to light buttons when the connection is up, something is playing, a specific scene matches the now-playing status line (whole-token name/code, so `INTRO` does not match `INTRO2`), a switch is on/off (off only when the device reported off), a level crosses a threshold, a select entity matches a choice (case-insensitive), or a sensor text contains a string.

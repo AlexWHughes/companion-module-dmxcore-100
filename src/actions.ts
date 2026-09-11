@@ -1,7 +1,7 @@
 import type { CompanionActionDefinitions } from '@companion-module/base'
 import type ModuleInstance from './main.js'
 import { PLAYBACK_DEFAULT, SwitchCommands, type SwitchCommand } from './constants.js'
-import { choiceDropdown, entityChoices, type ExecuteRequest } from './entities.js'
+import { allSelectChoices, choiceDropdown, entityChoices, type ExecuteRequest } from './entities.js'
 import { assertNever, clamp, percentToLevel } from './util.js'
 import { getLevel } from './state.js'
 
@@ -56,8 +56,7 @@ export function UpdateActions(self: ModuleInstance): void {
 	const defaultSwitch = switches[0]?.id ?? ''
 	const defaultLevel = levels[0]?.id ?? ''
 	const defaultSelect = selects[0]?.id ?? ''
-	const selectEntity = self.state.entities.get(defaultSelect)
-	const choiceOptions = choiceDropdown(selectEntity?.choices)
+	const choiceOptions = choiceDropdown(allSelectChoices(self.state.entities.values()))
 
 	const actions: CompanionActionDefinitions<ActionsSchema> = {
 		activateScene: {
@@ -187,13 +186,13 @@ export function UpdateActions(self: ModuleInstance): void {
 				if (!code) return
 				const percent = Number(action.options.percent)
 				const level = percentToLevel(percent)
-				const accepted = await self.execute({ code, command: 'setLevel', level }, { preferWs: true })
-				if (accepted) self.applyLocalLevel(code, level)
+				await self.execute({ code, command: 'setLevel', level }, { preferWs: true })
 			},
 		},
 		bumpLevel: {
 			name: 'Bump level',
-			description: 'Adjust a level entity by a percentage delta from its current state.',
+			description:
+				'Adjust a level entity by a percentage delta from its current state. Local level updates as soon as the command is sent so rapid rotary ticks accumulate.',
 			options: [
 				{
 					id: 'code',
@@ -219,14 +218,13 @@ export function UpdateActions(self: ModuleInstance): void {
 				const current = getLevel(self.state, code) ?? 0
 				const nextPercent = clamp(current * 100 + Number(action.options.deltaPercent), 0, 100)
 				const level = percentToLevel(nextPercent)
-				const accepted = await self.execute({ code, command: 'setLevel', level }, { preferWs: true })
-				if (accepted) self.applyLocalLevel(code, level)
+				await self.execute({ code, command: 'setLevel', level }, { preferWs: true })
 			},
 		},
 		setChoice: {
 			name: 'Set choice',
 			description:
-				'Set a select entity to one of its catalog choices. The Choice list is seeded from the first select in the catalog — type a custom value when controlling a different select.',
+				'Set a select entity to one of its catalog choices. The Choice list is the union of choices from every select — type a custom value if a select’s option is missing.',
 			options: [
 				{
 					id: 'code',
@@ -244,7 +242,7 @@ export function UpdateActions(self: ModuleInstance): void {
 					choices: choiceOptions,
 					allowCustom: true,
 					tooltip:
-						'Choices come from the first select in the catalog. Type the exact choice when using a different select.',
+						'Choices are pooled from every select in the catalog. Type the exact choice if it is missing from the list.',
 				},
 			],
 			callback: async (action) => {
