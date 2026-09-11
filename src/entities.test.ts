@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildBaseUrl, buildWsUrl } from './api.js'
-import { entityVariableId, parseDeviceInfo, parseDeviceStatus, parseEntities, parseStates } from './entities.js'
+import {
+	allSelectChoices,
+	entityVariableId,
+	parseDeviceInfo,
+	parseDeviceStatus,
+	parseEntities,
+	parseStates,
+} from './entities.js'
 import {
 	applyStates,
 	createInitialState,
@@ -188,6 +195,39 @@ void test('now-playing match keeps cue and sound codes distinct', () => {
 	applyStates(state, [{ code: 'system.nowplaying', text: 'Sound: INTRO' }], true)
 	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO'), false)
 	assert.equal(nowPlayingMatchesEntity(state, 'sound.INTRO'), true)
+})
+
+void test('now-playing match does not treat overlapping codes as substrings', () => {
+	const state = createInitialState()
+	replaceCatalog(state, [
+		{ code: 'cue.INTRO', name: 'Intro', kind: 'scene' },
+		{ code: 'cue.INTRO2', name: 'Intro 2', kind: 'scene' },
+		{ code: 'system.nowplaying', name: 'Now Playing', kind: 'sensor' },
+	])
+
+	applyStates(state, [{ code: 'system.nowplaying', text: 'Cue: INTRO2' }], true)
+	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO'), false)
+	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO2'), true)
+
+	applyStates(state, [{ code: 'system.nowplaying', text: 'Cue: INTRO' }], true)
+	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO'), true)
+	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO2'), false)
+
+	applyStates(state, [{ code: 'system.nowplaying', text: 'Cue: INTRO (loop)' }], true)
+	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO'), true)
+	assert.equal(nowPlayingMatchesEntity(state, 'cue.INTRO2'), false)
+})
+
+void test('pools unique select choices in catalog order', () => {
+	assert.deepEqual(
+		allSelectChoices([
+			{ code: 'cv.Mode', name: 'Mode', kind: 'select', choices: ['A', 'B'] },
+			{ code: 'cv.Look', name: 'Look', kind: 'select', choices: ['B', 'C'] },
+			{ code: 'cue.INTRO', name: 'Intro', kind: 'scene' },
+			{ code: 'cv.Empty', name: 'Empty', kind: 'select' },
+		]),
+		['A', 'B', 'C'],
+	)
 })
 
 void test('treats missing switch state as unknown, not off', () => {

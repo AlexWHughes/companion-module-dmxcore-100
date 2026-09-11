@@ -8,7 +8,7 @@ import {
 	type EntityState,
 	type IntegrationEntity,
 } from './entities.js'
-import { formatPercentUnit } from './util.js'
+import { containsAlphanumericToken, formatPercentUnit } from './util.js'
 
 export interface DmxCoreState {
 	connected: boolean
@@ -103,7 +103,8 @@ function playbackTypeMarker(code: string): string | null {
 
 /**
  * Now-playing `text` is a status line (e.g. `Cue: INTRO`), never a namespaced code.
- * Require the playback type from the code prefix, then match catalog name and/or code suffix.
+ * Require the playback type from the code prefix, then match catalog name and/or code suffix
+ * as whole alphanumeric tokens so `cue.INTRO` does not light for `Cue: INTRO2`.
  */
 export function nowPlayingMatchesEntity(state: DmxCoreState, code: string): boolean {
 	const text = sensorText(state, SYSTEM_NOW_PLAYING).trim().toLowerCase()
@@ -115,9 +116,10 @@ export function nowPlayingMatchesEntity(state: DmxCoreState, code: string): bool
 	const entity = state.entities.get(code)
 	const suffix = code.replace(/^(cue|timeline|sound)\./i, '').toLowerCase()
 	const name = entity?.name.trim().toLowerCase() ?? ''
+	const haystack = marker ? text.slice(text.indexOf(marker) + marker.length).trim() : text
 
-	if (suffix && text.includes(suffix)) return true
-	if (name && text.includes(name)) return true
+	if (suffix && containsAlphanumericToken(haystack, suffix)) return true
+	if (name && containsAlphanumericToken(haystack, name)) return true
 	return false
 }
 
