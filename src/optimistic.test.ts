@@ -52,6 +52,7 @@ void test('unknown prior on rejection signals refresh instead of inventing a lev
 	const pending: PendingOptimisticLevels = new Map()
 	trackOptimisticSetLevel(pending, 'zone.BAR', null)
 	assert.equal(takeOptimisticRollback(pending, 'zone.BAR'), null)
+	assert.equal(pending.get('zone.BAR'), null)
 })
 
 void test('lost commands roll back all pending levels then allow reconciliation', () => {
@@ -131,6 +132,26 @@ void test('level-free partial leaves rollback so a later rejection restores the 
 		applyStates(state, [{ code: 'system.masterdimmer', level: rollback }], false)
 	}
 	assert.equal(getLevel(state, 'system.masterdimmer'), 0.4)
+})
+
+void test('unknown priors stay pending until a full snapshot after numeric rollback', () => {
+	const state = createInitialState()
+	applyStates(state, [{ code: 'system.masterdimmer', level: 0.5 }], true)
+
+	const pending: PendingOptimisticLevels = new Map()
+	trackOptimisticSetLevel(pending, 'system.masterdimmer', getLevel(state, 'system.masterdimmer'))
+	trackOptimisticSetLevel(pending, 'zone.BAR', null)
+	applyStates(state, [{ code: 'system.masterdimmer', level: 0.8 }], false)
+
+	const rollbacks = takeAllOptimisticRollbacks(pending)
+	assert.deepEqual(rollbacks, [{ code: 'system.masterdimmer', priorLevel: 0.5 }])
+	assert.equal(pending.get('zone.BAR'), null)
+
+	for (const { code, priorLevel } of rollbacks) {
+		applyStates(state, [{ code, level: priorLevel }], false)
+	}
+	assert.equal(getLevel(state, 'system.masterdimmer'), 0.5)
+	assert.equal(pending.has('zone.BAR'), true)
 })
 
 void test('overlapping reconciles keep execute waiting for the newer snapshot', async () => {

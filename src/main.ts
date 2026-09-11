@@ -320,12 +320,13 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		void this.#reconcileFromDevice()
 	}
 
-	#restoreOptimisticRollbacks(rollbacks: Array<{ code: string; priorLevel: number | null }>): void {
-		const restores = rollbacks
-			.filter((entry): entry is { code: string; priorLevel: number } => typeof entry.priorLevel === 'number')
-			.map(({ code, priorLevel }) => ({ code, level: priorLevel }))
-		if (restores.length === 0) return
-		applyStates(this.state, restores, false)
+	#restoreOptimisticRollbacks(rollbacks: Array<{ code: string; priorLevel: number }>): void {
+		if (rollbacks.length === 0) return
+		applyStates(
+			this.state,
+			rollbacks.map(({ code, priorLevel }) => ({ code, level: priorLevel })),
+			false,
+		)
 		this.#publishState()
 	}
 
@@ -338,7 +339,6 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			try {
 				const states = await api.getState()
 				if (generation !== this.#connectGeneration || !isCurrent()) return
-				this.#pendingOptimisticLevels.clear()
 				this.#onState(states, true)
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)

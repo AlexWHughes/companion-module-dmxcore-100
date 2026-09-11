@@ -71,18 +71,24 @@ export class ReconcileGate {
 /**
  * Take the rollback prior for a rejected execute. `undefined` means nothing was pending.
  * `null` means pending but the prior level was unknown — caller should refresh device state.
+ * Unknown priors stay in the map until a successful full snapshot confirms them.
  */
 export function takeOptimisticRollback(pending: PendingOptimisticLevels, code: string): number | null | undefined {
 	if (!pending.has(code)) return undefined
 	const prior = pending.get(code) ?? null
-	pending.delete(code)
+	if (typeof prior === 'number') pending.delete(code)
 	return prior
 }
 
+/** Take numeric rollback baselines. Unknown (`null`) priors stay until a full snapshot. */
 export function takeAllOptimisticRollbacks(
 	pending: PendingOptimisticLevels,
-): Array<{ code: string; priorLevel: number | null }> {
-	const rollbacks = [...pending.entries()].map(([code, priorLevel]) => ({ code, priorLevel }))
-	pending.clear()
+): Array<{ code: string; priorLevel: number }> {
+	const rollbacks: Array<{ code: string; priorLevel: number }> = []
+	for (const [code, priorLevel] of pending) {
+		if (typeof priorLevel !== 'number') continue
+		rollbacks.push({ code, priorLevel })
+		pending.delete(code)
+	}
 	return rollbacks
 }
