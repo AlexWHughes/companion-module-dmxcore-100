@@ -13,10 +13,18 @@ import {
 	applyStates,
 	createInitialState,
 	displayDeviceName,
+	getLevel,
 	replaceCatalog,
 	type DmxCoreState,
 	variableValuesFromState,
 } from './state.js'
+import {
+	confirmOptimisticSetLevels,
+	takeAllOptimisticRollbacks,
+	takeOptimisticRollback,
+	trackOptimisticSetLevel,
+	type PendingOptimisticLevels,
+} from './optimistic.js'
 
 export type ModuleSchema = {
 	config: ModuleConfig
@@ -37,6 +45,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#events: IntegrationEventSocket | undefined
 	#connectGeneration = 0
 	#statusPollTimer: ReturnType<typeof setInterval> | undefined
+	readonly #pendingOptimisticLevels: PendingOptimisticLevels = new Map()
+	#reconcilePromise: Promise<void> | null = null
 
 	constructor(internal: unknown) {
 		super(internal)
@@ -71,18 +81,23 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			return false
 		}
 
+		if (this.#reconcilePromise) {
+			await this.#reconcilePromise
+		}
+
 		try {
 			if (options?.preferWs && this.#events?.sendExecute(request)) {
 				// WS execute is fire-and-forget (error frames only). Treat a queued frame as accepted
 				// and apply setLevel locally so rotary ticks can accumulate before the device echo.
 				this.log('debug', `WS execute ${request.command} ${request.code}`)
-				this.#applyOptimisticExecute(request)
+				this.#applyOptimisticExecute(request, true)
 				return true
 			}
 
 			await this.#api.execute(request)
 			this.log('debug', `HTTP execute ${request.command} ${request.code}`)
-			this.#applyOptimisticExecute(request)
+			// HTTP already accepted the command; refresh UI without tracking a rollback.
+			this.#applyOptimisticExecute(request, false)
 			return true
 		} catch (error) {
 			this.#handleApiError('execute', error)
@@ -96,8 +111,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.#publishState()
 	}
 
-	#applyOptimisticExecute(request: ExecuteRequest): void {
+	#applyOptimisticExecute(request: ExecuteRequest, trackPending: boolean): void {
 		if (request.command !== 'setLevel' || typeof request.level !== 'number') return
+		if (trackPending) {
+			trackOptimisticSetLevel(this.#pendingOptimisticLevels, request.code, getLevel(this.state, request.code))
+		}
 		this.applyLocalLevel(request.code, request.level)
 	}
 
@@ -194,11 +212,13 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			},
 			onCatalog: (entities) => this.#onCatalog(entities),
 			onState: (states, full) => this.#onState(states, full),
-			onError: (message) => {
+			onError: (message, details) => {
 				this.log('warn', `Integration API event error: ${message}`)
+				this.#onExecuteError(message, details?.code)
 			},
 			onClose: () => {
 				this.state.connected = false
+				this.#onOptimisticConnectionLost()
 				this.#publishState()
 				if (this.#api) {
 					this.updateStatus(InstanceStatus.Connecting, 'WebSocket reconnecting…')
@@ -219,6 +239,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.state.connected = false
 		this.state.info = null
 		this.state.status = null
+		this.#pendingOptimisticLevels.clear()
+		this.#reconcilePromise = null
 	}
 
 	#startStatusPoll(): void {
@@ -263,8 +285,73 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	#onState(states: EntityState[], full: boolean): void {
+		if (full) {
+			this.#pendingOptimisticLevels.clear()
+		} else {
+			confirmOptimisticSetLevels(
+				this.#pendingOptimisticLevels,
+				states.map((entry) => entry.code),
+			)
+		}
 		applyStates(this.state, states, full)
 		this.#publishState()
+	}
+
+	#onExecuteError(_message: string, code?: string): void {
+		if (code) {
+			const prior = takeOptimisticRollback(this.#pendingOptimisticLevels, code)
+			if (prior === undefined) return
+			if (typeof prior === 'number') {
+				this.applyLocalLevel(code, prior)
+				return
+			}
+			void this.#reconcileFromDevice()
+			return
+		}
+
+		if (this.#pendingOptimisticLevels.size === 0) return
+		this.#restoreOptimisticRollbacks(takeAllOptimisticRollbacks(this.#pendingOptimisticLevels))
+		void this.#reconcileFromDevice()
+	}
+
+	#onOptimisticConnectionLost(): void {
+		if (this.#pendingOptimisticLevels.size === 0) return
+		this.#restoreOptimisticRollbacks(takeAllOptimisticRollbacks(this.#pendingOptimisticLevels))
+		void this.#reconcileFromDevice()
+	}
+
+	#restoreOptimisticRollbacks(rollbacks: Array<{ code: string; priorLevel: number | null }>): void {
+		const restores = rollbacks
+			.filter((entry): entry is { code: string; priorLevel: number } => typeof entry.priorLevel === 'number')
+			.map(({ code, priorLevel }) => ({ code, level: priorLevel }))
+		if (restores.length === 0) return
+		applyStates(this.state, restores, false)
+		this.#publishState()
+	}
+
+	async #reconcileFromDevice(): Promise<void> {
+		if (!this.#api) return
+		if (this.#reconcilePromise) {
+			await this.#reconcilePromise
+			return
+		}
+
+		const generation = this.#connectGeneration
+		this.#reconcilePromise = (async () => {
+			try {
+				const states = await this.#api!.getState()
+				if (generation !== this.#connectGeneration) return
+				this.#pendingOptimisticLevels.clear()
+				this.#onState(states, true)
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				this.log('debug', `Unable to reconcile levels from device state: ${message}`)
+			}
+		})().finally(() => {
+			this.#reconcilePromise = null
+		})
+
+		await this.#reconcilePromise
 	}
 
 	#publishState(): void {

@@ -17,7 +17,7 @@ export type EventsHandlers = {
 	onHello: (info: DeviceInfo) => void
 	onCatalog: (entities: IntegrationEntity[]) => void
 	onState: (states: EntityState[], full: boolean) => void
-	onError: (message: string) => void
+	onError: (message: string, details?: { code?: string }) => void
 	onOpen: () => void
 	onClose: () => void
 	log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void
@@ -202,7 +202,9 @@ export class IntegrationEventSocket {
 					typeof (frame as { error?: unknown }).error === 'string'
 						? (frame as { error: string }).error
 						: 'WebSocket error frame'
-				this.#handlers.onError(message)
+				const code =
+					typeof (frame as { code?: unknown }).code === 'string' ? (frame as { code: string }).code : undefined
+				this.#handlers.onError(message, code ? { code } : undefined)
 				return
 			}
 			default:
